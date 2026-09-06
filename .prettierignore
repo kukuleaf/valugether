@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.expo/
+dist/
+coverage/
+next-env.d.ts
+database/sql/
+CHECKSUMS.sha256
+MANIFEST.txt
+VERSION
+*.http
+*.env
+*.env.*
+!*.env.example

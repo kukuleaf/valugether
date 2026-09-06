@@ -1,0 +1,41 @@
+@baseUrl = http://localhost:3000/api
+
+### Health
+GET {{baseUrl}}/health
+
+### Register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "demo@example.com",
+  "password": "ChangeMe!1234"
+}
+
+### Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "demo@example.com",
+  "password": "ChangeMe!1234"
+}
+
+### Screening - exact + near
+POST {{baseUrl}}/screening/search
+Content-Type: application/json
+
+{
+  "marketCodes": ["US", "KR"],
+  "conditions": [
+    {"metricCode":"PER", "operator":"LTE", "target":15, "weight":1},
+    {"metricCode":"ROE", "operator":"GTE", "target":10, "weight":1}
+  ],
+  "limit": 50
+}
+
+### Strategies
+GET {{baseUrl}}/screening/strategies
+
+### Latest stocks
+GET {{baseUrl}}/stocks?marketCode=US&limit=20

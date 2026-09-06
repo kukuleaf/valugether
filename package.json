@@ -1,0 +1,23 @@
+{
+  "name": "right-stock-value",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/api",
+    "apps/mobile",
+    "apps/admin"
+  ],
+  "scripts": {
+    "api": "npm --workspace apps/api run start:dev",
+    "mobile": "npm --workspace apps/mobile run start",
+    "admin": "npm --workspace apps/admin run dev -- -p 3100",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm --workspace apps/api run build && npm --workspace apps/admin run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:terms": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/10_terms_versioning.sql"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

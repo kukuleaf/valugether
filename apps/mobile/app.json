@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "바른주식 밸류",
+    "slug": "right-stock-value",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "rightstockvalue",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.example.stockscreener",
+      "adaptiveIcon": {
+        "backgroundColor": "#F5F7FA"
+      }
+    },
+    "plugins": ["expo-router", "expo-status-bar"]
+  }
+}
