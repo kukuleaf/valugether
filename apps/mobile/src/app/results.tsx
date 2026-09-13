@@ -1,7 +1,9 @@
-import { useLocalSearchParams } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, H1, LoadingState, Muted, Page, palette } from '../components/ui';
+import { PersistentTabBar } from '../components/PersistentTabBar';
 import { runScreening, ScreenResult } from '../lib/api';
 
 const operatorLabels: Record<string, string> = {
@@ -53,71 +55,85 @@ export default function Results() {
     })();
   }, [params.strategy, params.conditions]);
   return (
-    <ScrollView
-      style={{ backgroundColor: palette.bg }}
-      contentContainerStyle={styles.scrollContent}
-    >
-      <Page>
-        <H1>검색 결과</H1>
-        {!data && !error && <LoadingState label="조건에 맞는 회사를 찾고 있어요" />}
-        {error ? (
-          <Card>
-            <Text style={{ color: '#A00000', fontWeight: '700' }}>검색 실패</Text>
-            <Muted>{error}</Muted>
-            <Muted>잠시 후 다시 시도해 주세요.</Muted>
-          </Card>
-        ) : null}
-        {data && (
-          <>
-            <View style={styles.counts}>
-              <Card style={styles.countCard}>
-                <Text style={styles.big}>{data.exactCount}</Text>
-                <Muted>정확 일치</Muted>
-              </Card>
-              <Card style={styles.countCard}>
-                <Text style={styles.big}>{data.nearCount}</Text>
-                <Muted>근접 후보</Muted>
-              </Card>
-            </View>
-            {data.results.map((x) => (
-              <Card key={x.securityId}>
-                <View style={styles.header}>
-                  <View style={styles.company}>
-                    <Text style={styles.ticker}>{x.ticker}</Text>
-                    <Muted>
-                      {x.name} · {marketLabels[x.marketCode] ?? x.marketCode}
-                    </Muted>
-                  </View>
-                  <View style={[styles.badge, x.matchType === 'NEAR' && styles.near]}>
-                    <Text style={styles.badgeText}>
-                      {x.matchType === 'EXACT' ? '조건 일치' : '근접 후보'} {x.similarity}%
-                    </Text>
-                  </View>
-                </View>
-                {x.details.map((d: any) => (
-                  <View key={d.metricCode} style={styles.metric}>
-                    <Text style={styles.metricLabel}>{d.metricName ?? d.metricCode}</Text>
-                    <Text
-                      style={[
-                        styles.metricValue,
-                        { color: d.status === 'NEAR' ? palette.near : palette.muted },
-                      ]}
-                    >
-                      {metricValue(d.actual, d.unitType)} / 기준 {metricValue(d.target, d.unitType)}{' '}
-                      {operatorLabels[d.operator] ?? ''}
-                      {d.status === 'NEAR' ? ' · 근접' : ''}
-                    </Text>
-                  </View>
-                ))}
-              </Card>
-            ))}
-          </>
-        )}
-      </Page>
-    </ScrollView>
+    <View style={styles.screen}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <Page>
+          <H1>검색 결과</H1>
+          {!data && !error && <LoadingState label="조건에 맞는 회사를 찾고 있어요" />}
+          {error ? (
+            <Card>
+              <Text style={{ color: '#A00000', fontWeight: '700' }}>검색 실패</Text>
+              <Muted>{error}</Muted>
+              <Muted>잠시 후 다시 시도해 주세요.</Muted>
+            </Card>
+          ) : null}
+          {data && (
+            <>
+              <View style={styles.counts}>
+                <Card style={styles.countCard}>
+                  <Text style={styles.big}>{data.exactCount}</Text>
+                  <Muted>정확 일치</Muted>
+                </Card>
+                <Card style={styles.countCard}>
+                  <Text style={styles.big}>{data.nearCount}</Text>
+                  <Muted>근접 후보</Muted>
+                </Card>
+              </View>
+              {data.results.map((x) => (
+                <Pressable
+                  key={x.securityId}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${x.name} 상세정보 보기`}
+                  onPress={() => router.push(`/stocks/${x.securityId}`)}
+                  style={({ pressed }) => pressed && styles.pressed}
+                >
+                  <Card>
+                    <View style={styles.header}>
+                      <View style={styles.company}>
+                        <Text style={styles.ticker}>{x.ticker}</Text>
+                        <Muted>
+                          {x.name} · {marketLabels[x.marketCode] ?? x.marketCode}
+                        </Muted>
+                      </View>
+                      <View style={[styles.badge, x.matchType === 'NEAR' && styles.near]}>
+                        <Text style={styles.badgeText}>
+                          {x.matchType === 'EXACT' ? '조건 일치' : '근접 후보'} {x.similarity}%
+                        </Text>
+                      </View>
+                    </View>
+                    {x.details.map((d: any) => (
+                      <View key={d.metricCode} style={styles.metric}>
+                        <Text style={styles.metricLabel}>{d.metricName ?? d.metricCode}</Text>
+                        <Text
+                          style={[
+                            styles.metricValue,
+                            { color: d.status === 'NEAR' ? palette.near : palette.muted },
+                          ]}
+                        >
+                          {metricValue(d.actual, d.unitType)} / 기준{' '}
+                          {metricValue(d.target, d.unitType)} {operatorLabels[d.operator] ?? ''}
+                          {d.status === 'NEAR' ? ' · 근접' : ''}
+                        </Text>
+                      </View>
+                    ))}
+                    <View style={styles.detailLink}>
+                      <Text style={styles.detailLinkText}>기업 상세정보 보기</Text>
+                      <Ionicons name="chevron-forward" size={16} color={palette.accent} />
+                    </View>
+                  </Card>
+                </Pressable>
+              ))}
+            </>
+          )}
+        </Page>
+      </ScrollView>
+      <PersistentTabBar />
+    </View>
   );
 }
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: palette.bg },
+  scroll: { flex: 1 },
   scrollContent: { alignItems: 'center', paddingBottom: 30 },
   counts: { flexDirection: 'row', gap: 10, width: '100%' },
   countCard: { flex: 1, minWidth: 0 },
@@ -133,6 +149,7 @@ const styles = StyleSheet.create({
   },
   near: { backgroundColor: '#FFF2D5' },
   badgeText: { fontSize: 12, fontWeight: '700', color: palette.text },
+  pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
   metric: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -143,4 +160,12 @@ const styles = StyleSheet.create({
   },
   metricLabel: { flexShrink: 0, fontWeight: '600', color: palette.text },
   metricValue: { flex: 1, minWidth: 0, marginLeft: 12, textAlign: 'right' },
+  detailLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 3,
+    paddingTop: 8,
+  },
+  detailLinkText: { color: palette.accent, fontSize: 12, fontWeight: '800' },
 });

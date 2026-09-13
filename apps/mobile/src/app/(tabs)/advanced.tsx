@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Button, Card, H1, Input, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { api, ScreenCondition } from '../../lib/api';
+import { getAccess } from '../../lib/session';
 
 type Operator = ScreenCondition['operator'];
 type Metric = {
@@ -74,6 +75,8 @@ export default function Advanced() {
   const [help, setHelp] = useState<{ title: string; body: string } | null>(null);
   const [noLossThreeYears, setNoLossThreeYears] = useState(false);
   const [useDebtRatio, setUseDebtRatio] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [presetName, setPresetName] = useState('나의 기업 기준');
 
   useEffect(() => {
     api<Metric[]>('/metrics')
@@ -108,7 +111,7 @@ export default function Advanced() {
     target,
   });
 
-  const search = () => {
+  const buildConditions = () => {
     let conditions: ScreenCondition[] = [];
     if (mode === 'BASIC') {
       conditions = basicMetrics.flatMap((item) => {
@@ -133,9 +136,53 @@ export default function Advanced() {
         title: '검색 기준을 확인해 주세요',
         body: '숫자로 된 검색 기준을 하나 이상 입력해 주세요.',
       });
+      return null;
+    }
+    return conditions;
+  };
+
+  const search = () => {
+    const conditions = buildConditions();
+    if (!conditions) return;
+    router.push({ pathname: '/results', params: { conditions: JSON.stringify(conditions) } });
+  };
+
+  const openSave = async () => {
+    if (!(await getAccess())) {
+      setHelp({
+        title: '로그인이 필요합니다',
+        body: '프리셋은 계정에 저장됩니다. 로그인 후 같은 조건을 조건검색과 맞춤기업 탭에서 함께 사용할 수 있습니다.',
+      });
       return;
     }
-    router.push({ pathname: '/results', params: { conditions: JSON.stringify(conditions) } });
+    if (buildConditions()) setSaveOpen(true);
+  };
+
+  const savePreset = async () => {
+    const conditions = buildConditions();
+    if (!conditions || !presetName.trim()) return;
+    try {
+      await api(
+        '/presets',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name: presetName.trim(),
+            conditions,
+            markets: ['US', 'KR'],
+            mode: mode === 'BASIC' ? 'ADVANCED_BASIC' : 'ADVANCED_DETAIL',
+          }),
+        },
+        true,
+      );
+      setSaveOpen(false);
+      setHelp({
+        title: '프리셋 저장 완료',
+        body: '맞춤기업 탭에서도 같은 프리셋으로 기업 조회와 알림 설정을 할 수 있습니다.',
+      });
+    } catch (cause: any) {
+      setHelp({ title: '저장 실패', body: cause.message });
+    }
   };
 
   const metricInput = (metric: Metric, label?: string, showName = true) => (
@@ -304,7 +351,7 @@ export default function Advanced() {
         )}
 
         <Button title="회사 찾기" onPress={search} />
-        <Button title="이 조건 저장하기 (로그인 필요)" secondary onPress={() => {}} />
+        <Button title="이 조건을 프리셋으로 저장" secondary onPress={openSave} />
       </Page>
 
       <Modal
@@ -318,6 +365,28 @@ export default function Advanced() {
             <Text style={styles.modalTitle}>{help?.title}</Text>
             <Text style={styles.helpBody}>{help?.body}</Text>
             <Button title="확인" onPress={() => setHelp(null)} />
+          </Card>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={saveOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSaveOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Card style={styles.helpCard}>
+            <Text style={styles.modalTitle}>프리셋 저장</Text>
+            <Muted>조건검색과 맞춤기업 탭에서 함께 사용됩니다.</Muted>
+            <Input
+              accessibilityLabel="프리셋 이름"
+              value={presetName}
+              onChangeText={setPresetName}
+              placeholder="프리셋 이름"
+            />
+            <Button title="저장" onPress={savePreset} />
+            <Button title="취소" secondary onPress={() => setSaveOpen(false)} />
           </Card>
         </View>
       </Modal>

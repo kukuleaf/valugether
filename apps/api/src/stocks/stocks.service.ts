@@ -2,6 +2,25 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
 
+type MetricHistoryRow = {
+  metric_code: string;
+  period_type: string;
+  fiscal_year: number | null;
+  fiscal_quarter: number | null;
+  start_date: string | null;
+  end_date: string;
+  filing_date: string | null;
+  report_type: string | null;
+  consolidation_code: string | null;
+  numeric_value: string | null;
+  text_value: string | null;
+  currency_code: string | null;
+  unit_code: string | null;
+  source_type: string;
+  provider_name: string | null;
+  is_restated: boolean;
+};
+
 @Injectable()
 export class StocksService {
   constructor(@Inject(DB_POOL) private readonly db: Pool) {}
@@ -19,16 +38,176 @@ export class StocksService {
     return r.rows;
   }
 
+  async priceHistory(id: number, range = '6M') {
+    const ranges: Record<string, { interval: string; limit: number }> = {
+      '1M': { interval: '1 month', limit: 31 },
+      '3M': { interval: '3 months', limit: 93 },
+      '6M': { interval: '6 months', limit: 186 },
+      '1Y': { interval: '1 year', limit: 366 },
+      '3Y': { interval: '3 years', limit: 1098 },
+      '5Y': { interval: '5 years', limit: 1830 },
+    };
+    const safeRange = ranges[range] ? range : '6M';
+    const selected = ranges[safeRange];
+    const result = await this.db.query(
+      `select distinct on (dp.trade_date)
+         dp.trade_date::text, dp.open_price, dp.high_price, dp.low_price,
+         dp.close_price, dp.adjusted_close, dp.volume, dp.currency_code,
+         p.provider_name
+       from daily_price dp
+       join data_provider p on p.provider_id=dp.provider_id
+       where dp.security_id=$1
+         and dp.trade_date >= current_date - $2::interval
+       order by dp.trade_date desc, p.priority
+       limit $3`,
+      [id, selected.interval, selected.limit],
+    );
+    return { range: safeRange, prices: result.rows };
+  }
+
   async detail(id: number) {
-    const s = await this.db.query('select * from v_security_master where security_id=$1', [id]);
-    if (!s.rowCount) throw new NotFoundException('종목을 찾을 수 없습니다.');
-    const metrics = await this.db.query(
-      `select m.metric_code,m.metric_name_ko,m.statement_type,m.unit_type,
-              l.numeric_value,l.text_value,l.as_of_date
-       from latest_metric_value l join financial_metric m on m.metric_id=l.metric_id
-       where l.security_id=$1 and m.is_active=true order by m.display_order`,
+    const security = await this.db.query(
+      `select
+         s.security_id, s.ticker, s.security_name, s.security_type,
+         s.currency_code, s.isin, s.listing_date::text, s.delisting_date::text, s.is_active,
+         c.company_id, c.legal_name, c.display_name as company_name,
+         c.country_code, c.dart_corp_code, c.sec_cik, c.industry_code,
+         c.sector_code, c.is_financial, c.website_url,
+         e.market_code, e.exchange_code, e.mic, e.exchange_name,
+         e.country_code as exchange_country_code, e.currency_code as exchange_currency_code,
+         e.timezone_name
+       from security s
+       join company c on c.company_id=s.company_id
+       join exchange e on e.exchange_id=s.exchange_id
+       where s.security_id=$1`,
       [id],
     );
-    return { ...s.rows[0], metrics: metrics.rows };
+    if (!security.rowCount) throw new NotFoundException('종목을 찾을 수 없습니다.');
+
+    const [latestMetrics, metricHistory, latestPrice, priceHistory, dividends, splits] =
+      await Promise.all([
+        this.db.query(
+          `select
+             m.metric_code, m.metric_name_ko, m.metric_name_en, m.statement_type,
+             m.value_type, m.unit_type, m.direction_code, m.formula_text, m.description,
+             l.numeric_value, l.text_value, l.as_of_date::text, l.source_type,
+             l.calculation_version
+           from financial_metric m
+           left join latest_metric_value l
+             on l.metric_id=m.metric_id and l.security_id=$1
+           where m.is_active=true and (
+             l.security_id is not null
+             or exists (
+               select 1
+               from financial_fact f
+               join financial_period fp on fp.financial_period_id=f.financial_period_id
+               where f.metric_id=m.metric_id and fp.company_id=$2
+             )
+             or exists (
+               select 1 from derived_metric_value d
+               where d.metric_id=m.metric_id and d.security_id=$1
+             )
+           )
+           order by m.display_order, m.metric_code`,
+          [id, security.rows[0].company_id],
+        ),
+        this.db.query<MetricHistoryRow>(
+          `select * from (
+             select
+               m.metric_code, fp.period_type, fp.fiscal_year, fp.fiscal_quarter,
+               fp.start_date::text, fp.end_date::text, fp.filing_date::text, fp.report_type,
+               fp.consolidation_code, f.numeric_value, f.text_value,
+               f.currency_code, f.unit_code, 'DISCLOSURE'::text as source_type,
+               p.provider_name, f.is_restated
+             from financial_fact f
+             join financial_period fp on fp.financial_period_id=f.financial_period_id
+             join financial_metric m on m.metric_id=f.metric_id and m.is_active=true
+             left join data_provider p on p.provider_id=fp.source_provider_id
+             where fp.company_id=$2
+
+             union all
+
+             select
+               m.metric_code, d.period_type, null::integer as fiscal_year,
+               case
+                 when d.period_type ~ '^Q[1-4]$' then substring(d.period_type from 2)::integer
+                 else null::integer
+               end as fiscal_quarter,
+               null::text as start_date, d.as_of_date::text as end_date,
+               null::text as filing_date, null::varchar as report_type,
+               null::varchar as consolidation_code, d.numeric_value, d.text_value,
+               d.currency_code, null::varchar as unit_code, 'CALCULATED'::text as source_type,
+               null::varchar as provider_name, false as is_restated
+             from derived_metric_value d
+             join financial_metric m on m.metric_id=d.metric_id and m.is_active=true
+             where d.security_id=$1
+           ) h
+           order by h.metric_code, h.end_date desc, h.fiscal_quarter desc nulls last`,
+          [id, security.rows[0].company_id],
+        ),
+        this.db.query(
+          `select
+             dp.trade_date::text, dp.open_price, dp.high_price, dp.low_price,
+             dp.close_price, dp.adjusted_close, dp.volume, dp.currency_code,
+             dp.fetched_at, p.provider_code, p.provider_name
+           from daily_price dp
+           join data_provider p on p.provider_id=dp.provider_id
+           where dp.security_id=$1
+           order by dp.trade_date desc, p.priority
+           limit 1`,
+          [id],
+        ),
+        this.db.query(
+          `select
+             dp.trade_date::text, dp.open_price, dp.high_price, dp.low_price,
+             dp.close_price, dp.adjusted_close, dp.volume, dp.currency_code,
+             p.provider_name
+           from daily_price dp
+           join data_provider p on p.provider_id=dp.provider_id
+           where dp.security_id=$1
+           order by dp.trade_date desc, p.priority
+           limit 120`,
+          [id],
+        ),
+        this.db.query(
+          `select
+             d.ex_date::text, d.payment_date::text, d.amount_per_share, d.currency_code,
+             d.event_status, p.provider_name
+           from dividend_event d
+           left join data_provider p on p.provider_id=d.provider_id
+           where d.security_id=$1
+           order by d.ex_date desc`,
+          [id],
+        ),
+        this.db.query(
+          `select s.ex_date::text, s.split_from, s.split_to, p.provider_name
+           from split_event s
+           left join data_provider p on p.provider_id=s.provider_id
+           where s.security_id=$1
+           order by s.ex_date desc`,
+          [id],
+        ),
+      ]);
+
+    const historyByMetric = new Map<string, MetricHistoryRow[]>();
+    for (const row of metricHistory.rows) {
+      const rows = historyByMetric.get(row.metric_code) ?? [];
+      rows.push(row);
+      historyByMetric.set(row.metric_code, rows);
+    }
+
+    const metrics = latestMetrics.rows.map((metric) => ({
+      ...metric,
+      history: historyByMetric.get(metric.metric_code) ?? [],
+    }));
+
+    return {
+      ...security.rows[0],
+      latest_price: latestPrice.rows[0] ?? null,
+      price_history: priceHistory.rows,
+      metrics,
+      dividends: dividends.rows,
+      splits: splits.rows,
+    };
   }
 }

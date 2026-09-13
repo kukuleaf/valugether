@@ -15,7 +15,8 @@
     "build": "npm --workspace apps/api run build && npm --workspace apps/admin run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:terms": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/10_terms_versioning.sql"
+    "db:terms": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/10_terms_versioning.sql",
+    "db:preset-notifications": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/11_preset_notifications.sql"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

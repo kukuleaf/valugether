@@ -119,7 +119,8 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   card: {
-    width: '100%',
+    width: Platform.OS === 'web' ? 'auto' : '100%',
+    alignSelf: 'stretch',
     minWidth: 0,
     backgroundColor: palette.surface,
     borderRadius: 16,

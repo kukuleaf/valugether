@@ -1,6 +1,6 @@
 바른주식 밸류 (Right Stock Value) v0.1
 
-Files: 141
+Files: 142
 
 .gitignore
 .prettierignore
@@ -95,6 +95,7 @@ apps/mobile/src/app/_layout.tsx
 apps/mobile/src/app/auth/login.tsx
 apps/mobile/src/app/auth/register.tsx
 apps/mobile/src/app/results.tsx
+apps/mobile/src/app/stocks/[id].tsx
 apps/mobile/src/components/ui.tsx
 apps/mobile/src/lib/api.ts
 apps/mobile/src/lib/session.ts

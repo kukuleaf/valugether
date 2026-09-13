@@ -74,6 +74,18 @@ export type ScreenResult = {
   similarity: number;
   details: any[];
 };
+export type ScreenPreset = {
+  preset_id: number;
+  preset_name: string;
+  description: string | null;
+  search_mode: 'GENERAL' | 'ADVANCED_BASIC' | 'ADVANCED_DETAIL';
+  market_filter_json: string[];
+  notification_enabled: boolean;
+  notification_interval_days: number;
+  next_notification_at: string | null;
+  last_notification_at: string | null;
+  conditions: ScreenCondition[];
+};
 export async function runScreening(body: {
   strategyCode?: string;
   marketCodes?: string[];

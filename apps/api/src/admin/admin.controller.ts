@@ -10,6 +10,8 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -26,6 +28,11 @@ import { DB_POOL } from '../common/database/database.module';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { AuditService } from '../audit/audit.service';
+import { RankingExportService } from './ranking-export.service';
+
+type DownloadResponse = {
+  set(headers: Record<string, string>): void;
+};
 class ToleranceDto {
   @IsIn(['PERCENT', 'ABSOLUTE']) type!: 'PERCENT' | 'ABSOLUTE';
   @IsNumber() @Min(0) value!: number;
@@ -50,7 +57,27 @@ export class AdminController {
   constructor(
     @Inject(DB_POOL) private readonly db: Pool,
     private readonly audit: AuditService,
+    private readonly rankingExport: RankingExportService,
   ) {}
+
+  @Get('rankings/export')
+  async exportRankings(
+    @Res({ passthrough: true }) response: DownloadResponse,
+    @Query('marketCode') marketCode?: string,
+    @Query('limit') requestedLimit?: string,
+  ) {
+    const parsedLimit = Number(requestedLimit ?? 100);
+    const limit = Number.isFinite(parsedLimit) ? parsedLimit : 100;
+    const file = await this.rankingExport.build({ marketCode, limit });
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `기업순위분석_${marketCode?.toUpperCase() || 'ALL'}_${date}.xlsx`;
+    response.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="ranking-analysis.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      'Cache-Control': 'no-store',
+    });
+    return new StreamableFile(file);
+  }
   @Get('dashboard') async dashboard() {
     const [u, s, b, e] = await Promise.all([
       this.db.query(

@@ -2,12 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
 import { ProviderRegistry } from '../providers/provider-registry.service';
+import { PresetAlertsService } from '../presets/preset-alerts.service';
 
 @Injectable()
 export class MarketPriceSyncService {
   constructor(
     @Inject(DB_POOL) private readonly db: Pool,
     private readonly providers: ProviderRegistry,
+    private readonly presetAlerts: PresetAlertsService,
   ) {}
 
   async run(exchangeMic: string, batchCode = 'US_EOD_PRICE_SYNC') {
@@ -103,6 +105,12 @@ export class MarketPriceSyncService {
         `update batch_job_run set status_code=$2,ended_at=now(),inserted_count=$3,updated_count=$4,skipped_count=$5,error_count=$6 where batch_run_id=$1`,
         [runId, errors ? 'PARTIAL_SUCCESS' : 'SUCCESS', inserted, updated, skipped, errors],
       );
+      let presetAlerts: { evaluated: number; notified: number } | { error: string };
+      try {
+        presetAlerts = await this.presetAlerts.runDue();
+      } catch (error: any) {
+        presetAlerts = { error: String(error?.message ?? error) };
+      }
       return {
         runId,
         provider: provider.code,
@@ -111,6 +119,7 @@ export class MarketPriceSyncService {
         updated,
         skipped,
         errors,
+        presetAlerts,
         elapsedMs: Date.now() - started,
       };
     } catch (e: any) {

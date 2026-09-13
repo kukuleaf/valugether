@@ -1,14 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'node:crypto';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { FetchEodOptions, MarketDataProvider } from '../core/market-data.provider';
 import { NormalizedDailyPrice } from '../core/normalized-models';
 import { KisDailyPriceResponse, KisTokenResponse } from './kis.external';
 import { toNormalizedKisPrice } from './kis.mapper';
 
+interface KisTokenCache {
+  accessToken: string;
+  expiresAt: number;
+  appKeyFingerprint: string;
+  baseUrl: string;
+}
+
 @Injectable()
 export class KisMarketProvider implements MarketDataProvider {
   readonly code = 'KIS';
   private accessToken?: { value: string; expiresAt: number };
+  private tokenPromise?: Promise<string>;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -57,15 +68,30 @@ export class KisMarketProvider implements MarketDataProvider {
   }
 
   private async token(): Promise<string> {
-    if (this.accessToken && this.accessToken.expiresAt > Date.now() + 60_000)
-      return this.accessToken.value;
+    if (this.accessToken && this.accessToken.expiresAt > Date.now()) return this.accessToken.value;
+    if (!this.tokenPromise) {
+      this.tokenPromise = this.loadOrIssueToken().finally(() => {
+        this.tokenPromise = undefined;
+      });
+    }
+    return this.tokenPromise;
+  }
+
+  private async loadOrIssueToken(): Promise<string> {
     const base = this.config.get('KIS_BASE_URL') ?? 'https://openapi.koreainvestment.com:9443';
+    const appKey = this.config.getOrThrow<string>('KIS_APP_KEY');
+    const cached = await this.readTokenCache(base, appKey);
+    if (cached) {
+      this.accessToken = { value: cached.accessToken, expiresAt: cached.expiresAt };
+      return cached.accessToken;
+    }
+
     const response = await fetch(`${base}/oauth2/tokenP`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         grant_type: 'client_credentials',
-        appkey: this.config.getOrThrow('KIS_APP_KEY'),
+        appkey: appKey,
         appsecret: this.config.getOrThrow('KIS_APP_SECRET'),
       }),
     });
@@ -75,11 +101,57 @@ export class KisMarketProvider implements MarketDataProvider {
       throw new Error(
         `KIS token ${body.error_code ?? 'UNKNOWN'}: ${body.error_description ?? 'missing access token'}`,
       );
-    this.accessToken = {
+    const token = {
       value: body.access_token,
       expiresAt: Date.now() + Number(body.expires_in ?? 86_400) * 1000,
     };
-    return body.access_token;
+    this.accessToken = token;
+    await this.writeTokenCache({
+      accessToken: token.value,
+      expiresAt: token.expiresAt,
+      appKeyFingerprint: this.appKeyFingerprint(appKey),
+      baseUrl: base,
+    });
+    return token.value;
+  }
+
+  private async readTokenCache(
+    baseUrl: string,
+    appKey: string,
+  ): Promise<KisTokenCache | undefined> {
+    try {
+      const parsed = JSON.parse(await readFile(this.tokenCachePath(), 'utf8')) as KisTokenCache;
+      if (
+        typeof parsed.accessToken !== 'string' ||
+        typeof parsed.expiresAt !== 'number' ||
+        typeof parsed.appKeyFingerprint !== 'string' ||
+        typeof parsed.baseUrl !== 'string'
+      ) {
+        throw new Error('invalid cache shape');
+      }
+      if (parsed.appKeyFingerprint !== this.appKeyFingerprint(appKey)) return undefined;
+      if (parsed.baseUrl !== baseUrl || parsed.expiresAt <= Date.now()) return undefined;
+      return parsed;
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') return undefined;
+      throw new Error('KIS token cache is unreadable; refusing automatic token reissue');
+    }
+  }
+
+  private async writeTokenCache(cache: KisTokenCache) {
+    const cachePath = this.tokenCachePath();
+    await mkdir(dirname(cachePath), { recursive: true });
+    await writeFile(cachePath, JSON.stringify(cache), { encoding: 'utf8', mode: 0o600 });
+    await chmod(cachePath, 0o600);
+  }
+
+  private tokenCachePath() {
+    const configured = this.config.get<string>('KIS_TOKEN_CACHE_PATH') ?? '.cache/kis-token.json';
+    return isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
+  }
+
+  private appKeyFingerprint(appKey: string) {
+    return createHash('sha256').update(appKey).digest('hex');
   }
 
   private async throttle() {

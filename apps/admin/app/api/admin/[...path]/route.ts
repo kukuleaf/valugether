@@ -36,9 +36,14 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     }
   }
   if (!upstream) return NextResponse.json({ message: 'unauthorized' }, { status: 401 });
-  const res = new NextResponse(await upstream.text(), {
+  const headers = new Headers();
+  for (const name of ['content-type', 'content-disposition', 'cache-control']) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  const res = new NextResponse(await upstream.arrayBuffer(), {
     status: upstream.status,
-    headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json' },
+    headers,
   });
   if (newTokens) {
     res.cookies.set('admin_access', newTokens.accessToken, {

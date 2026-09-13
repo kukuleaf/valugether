@@ -152,6 +152,18 @@ export class AuthService {
     return { ok: true };
   }
 
+  async me(userId: string) {
+    const result = await this.db.query(
+      `select u.user_id,u.email,u.status_code,u.email_verified_at,u.last_login_at,u.created_at,
+              (select count(*)::int from screen_preset p where p.user_id=u.user_id) preset_count,
+              (select count(*)::int from watchlist_item i join watchlist w on w.watchlist_id=i.watchlist_id where w.user_id=u.user_id) watchlist_count
+       from app_user u where u.user_id=$1 and u.deleted_at is null`,
+      [userId],
+    );
+    if (!result.rowCount) throw new UnauthorizedException('사용자 정보를 찾을 수 없습니다.');
+    return result.rows[0];
+  }
+
   private async issueTokens(userId: string, roles: string[]) {
     const accessMinutes = Number(this.config.get('JWT_ACCESS_MINUTES') ?? 15);
     const accessToken = await this.jwt.signAsync(

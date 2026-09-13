@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { router } from 'expo-router';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, H1, Input, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -52,6 +53,7 @@ export default function Register() {
       });
       await saveTokens(tokens);
       Alert.alert('가입 완료', '바른주식 밸류 가입이 완료되었습니다.');
+      router.replace('/settings');
     } catch (error: any) {
       Alert.alert('가입 실패', error.message);
     }

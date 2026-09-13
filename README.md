@@ -73,7 +73,7 @@ docker compose up -d
 
 `00_create_database.sql`은 접속 DB 자체를 만드는 파일이므로 PostgreSQL 관리자 DB(`postgres`)에서 실행합니다.
 
-그 후 생성한 DB에 접속하여 `01`~`10`을 순서대로 실행합니다.
+그 후 생성한 DB에 접속하여 `01`~`11`을 순서대로 실행합니다.
 
 ```text
 database/sql/
@@ -88,6 +88,14 @@ database/sql/
   08_indexes_and_views.sql
   09_seed_demo.sql
   10_terms_versioning.sql
+  11_preset_notifications.sql
+```
+
+로컬 샘플 계정(`09_seed_demo.sql` 적용 후):
+
+```text
+이메일: demo@rightstock.local
+비밀번호: DemoPassword1!
 ```
 
 기존 개발 DB에 약관 구조만 추가할 때:

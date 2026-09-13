@@ -62,9 +62,11 @@ KIS_APP_KEY=
 KIS_APP_SECRET=
 KIS_BASE_URL=https://openapi.koreainvestment.com:9443
 KIS_REQUEST_INTERVAL_MS=100
+KIS_TOKEN_CACHE_PATH=.cache/kis-token.json
 ```
 
 호출 제한은 계정과 공식 공지에 맞춰 `KIS_REQUEST_INTERVAL_MS`를 조정합니다. 전체 종목 배치의 허용 여부와 데이터 외부 표시·저장 조건은 출시 전에 확인합니다.
+접근 토큰은 유효기간 동안 메모리와 Git 제외 로컬 캐시에 보관해 재사용합니다. 캐시가 손상되면 자동 재발급하지 않습니다. 토큰 발급은 API 서버 단일 인스턴스에서만 수행하며, 다중 인스턴스 배포 전에는 공유 Secret Store와 분산 잠금을 추가합니다.
 
 #### Marketstack 후보 (미국 시장 후속)
 

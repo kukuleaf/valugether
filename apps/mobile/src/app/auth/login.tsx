@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Alert, Text } from 'react-native';
+import { router } from 'expo-router';
 import { api } from '../../lib/api';
 import { saveTokens } from '../../lib/session';
 import { Button, Card, H1, Input, Muted, Page, palette } from '../../components/ui';
@@ -14,6 +15,7 @@ export default function Login() {
       });
       await saveTokens(tokens);
       Alert.alert('로그인 성공', '안전하게 로그인되었습니다.');
+      router.replace('/settings');
     } catch (e: any) {
       Alert.alert('로그인 실패', e.message);
     }

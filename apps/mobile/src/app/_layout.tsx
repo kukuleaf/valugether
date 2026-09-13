@@ -8,9 +8,10 @@ export default function RootLayout() {
         screenOptions={{ headerShadowVisible: false, headerTitleStyle: { fontWeight: '700' } }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="results" options={{ title: '검색 결과' }} />
-        <Stack.Screen name="auth/login" options={{ title: '로그인' }} />
-        <Stack.Screen name="auth/register" options={{ title: '회원가입' }} />
+        <Stack.Screen name="results" options={{ headerShown: false }} />
+        <Stack.Screen name="stocks/[id]" options={{ title: '기업 상세정보' }} />
+        <Stack.Screen name="auth/login" options={{ title: '' }} />
+        <Stack.Screen name="auth/register" options={{ title: '' }} />
       </Stack>
     </>
   );

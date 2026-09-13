@@ -80,24 +80,12 @@ export default function Home() {
             <Text style={styles.heroTitle}>
               좋은 회사를{String.fromCharCode(10)}쉽게 발견하세요
             </Text>
-            <Text style={styles.heroDescription}>
-              어려운 재무제표는 대신 살펴보고,{String.fromCharCode(10)}내 기준에 맞는 회사를
-              찾아드려요.
-            </Text>
             <View style={styles.heroBadge}>
-              <Ionicons name="sparkles" size={14} color="#D9FFF4" />
-              <Text style={styles.heroBadgeText}>초보자를 위한 기업 찾기</Text>
+              <Ionicons name="compass-outline" size={24} color="#D9FFF4" />
+              <Text style={styles.heroBadgeText}>관심 있는 기준을 하나 골라보세요</Text>
             </View>
           </LinearGradient>
         </Animated.View>
-
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionTitle}>어떤 회사를 찾으세요?</Text>
-            <Text style={styles.sectionDescription}>관심 있는 기준을 하나 골라보세요</Text>
-          </View>
-          <Ionicons name="compass-outline" size={24} color={palette.brand} />
-        </View>
 
         <View style={styles.grid}>
           {strategies.map((strategy, index) => (
@@ -233,7 +221,6 @@ const styles = StyleSheet.create({
   },
   brand: { color: '#D9FFF4', fontWeight: '800', fontSize: 14, letterSpacing: 0.2 },
   heroTitle: { color: 'white', fontSize: 30, lineHeight: 39, fontWeight: '900', marginTop: 18 },
-  heroDescription: { color: '#D5E8ED', fontSize: 14, lineHeight: 21, marginTop: 8 },
   heroBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -246,15 +233,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   heroBadgeText: { color: '#D9FFF4', fontSize: 12, fontWeight: '700' },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 7,
-    paddingHorizontal: 2,
-  },
-  sectionTitle: { color: palette.text, fontSize: 20, fontWeight: '900' },
-  sectionDescription: { color: palette.muted, fontSize: 13, marginTop: 4 },
   grid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   strategyWrap: { width: '48%', flexGrow: 1 },
   strategyCard: {

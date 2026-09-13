@@ -6,6 +6,7 @@ import {
   Inject,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -13,10 +14,15 @@ import {
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Pool } from 'pg';
@@ -39,6 +45,11 @@ class SavePresetDto {
   @Type(() => PresetConditionDto)
   conditions!: PresetConditionDto[];
   @IsOptional() @IsArray() markets?: string[];
+  @IsOptional() @IsIn(['GENERAL', 'ADVANCED_BASIC', 'ADVANCED_DETAIL']) mode?: string;
+}
+class PresetNotificationDto {
+  @IsBoolean() enabled!: boolean;
+  @IsInt() @Min(1) @Max(30) intervalDays!: number;
 }
 
 @Controller('presets')
@@ -52,7 +63,9 @@ export class PresetsController {
   @Get() async list(@Req() req: any) {
     const r = await this.db.query(
       `select p.preset_id, p.preset_name, p.description, p.search_mode,
-              p.market_filter_json, p.created_at,
+              p.market_filter_json, p.notification_enabled,
+              p.notification_interval_days, p.next_notification_at,
+              p.last_notification_at, p.created_at,
               coalesce(
                 json_agg(
                   json_build_object(
@@ -82,14 +95,21 @@ export class PresetsController {
       await client.query('begin');
       const p = await client.query(
         `insert into screen_preset(
-           user_id, preset_name, description, market_filter_json
-         ) values ($1, $2, $3, $4::jsonb)
+           user_id, preset_name, description, market_filter_json, search_mode
+         ) values ($1, $2, $3, $4::jsonb, $5)
          on conflict(user_id, preset_name) do update
          set description = excluded.description,
              market_filter_json = excluded.market_filter_json,
+             search_mode = excluded.search_mode,
              updated_at = now()
          returning preset_id`,
-        [req.user.sub, dto.name, dto.description ?? null, JSON.stringify(dto.markets ?? [])],
+        [
+          req.user.sub,
+          dto.name,
+          dto.description ?? null,
+          JSON.stringify(dto.markets ?? []),
+          dto.mode ?? 'ADVANCED_BASIC',
+        ],
       );
       const id = p.rows[0].preset_id;
       await client.query('delete from screen_preset_condition where preset_id=$1', [id]);
@@ -123,6 +143,35 @@ export class PresetsController {
     } finally {
       client.release();
     }
+  }
+
+  @Patch(':id/notification')
+  async updateNotification(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PresetNotificationDto,
+  ) {
+    const result = await this.db.query(
+      `update screen_preset
+       set notification_enabled=$3,
+           notification_interval_days=$4,
+           next_notification_at=case when $3 then coalesce(next_notification_at,now()) else null end,
+           updated_at=now()
+       where preset_id=$1 and user_id=$2
+       returning preset_id,notification_enabled,notification_interval_days,next_notification_at`,
+      [id, req.user.sub, dto.enabled, dto.intervalDays],
+    );
+    return result.rows[0] ?? { presetId: id, updated: false };
+  }
+
+  @Get('notifications/inbox')
+  async notifications(@Req() req: any) {
+    const result = await this.db.query(
+      `select notification_id,preset_id,title,body,payload_json,read_at,created_at
+       from user_notification where user_id=$1 order by created_at desc limit 50`,
+      [req.user.sub],
+    );
+    return result.rows;
   }
 
   @Delete(':id') async remove(@Req() req: any, @Param('id', ParseIntPipe) id: number) {

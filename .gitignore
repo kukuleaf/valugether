@@ -6,6 +6,7 @@ node_modules/
 .expo/
 dist/
 coverage/
+.cache/
 *.log
 .DS_Store
 .vscode/settings.json

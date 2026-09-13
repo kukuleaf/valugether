@@ -4,6 +4,7 @@ const links = [
   ['/tolerances', 'Tolerance'],
   ['/providers', 'Providers'],
   ['/batches', 'Batches'],
+  ['/rankings', 'Excel Export'],
   ['/logs', 'Audit Logs'],
   ['/terms', '약관 관리'],
 ];

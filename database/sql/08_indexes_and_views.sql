@@ -10,6 +10,8 @@ CREATE INDEX IF NOT EXISTS ix_screen_search_user_date ON screen_search_log(user_
 CREATE INDEX IF NOT EXISTS ix_api_log_provider_date ON external_api_call_log(provider_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_audit_actor_date ON audit_log(actor_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_batch_job_code_date ON batch_job_run(batch_code, started_at DESC);
+CREATE INDEX IF NOT EXISTS ix_screen_preset_due_notification ON screen_preset(next_notification_at) WHERE notification_enabled=true;
+CREATE INDEX IF NOT EXISTS ix_user_notification_user_created ON user_notification(user_id, created_at DESC);
 
 CREATE OR REPLACE VIEW v_security_master AS
 SELECT s.security_id, e.market_code, e.exchange_code, e.mic,

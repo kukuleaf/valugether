@@ -445,6 +445,11 @@ CREATE TABLE IF NOT EXISTS screen_preset (
   search_mode       varchar(30) NOT NULL DEFAULT 'ADVANCED_BASIC',
   market_filter_json jsonb NOT NULL DEFAULT '[]'::jsonb,
   is_default        boolean NOT NULL DEFAULT false,
+  notification_enabled boolean NOT NULL DEFAULT false,
+  notification_interval_days smallint NOT NULL DEFAULT 1 CHECK (notification_interval_days BETWEEN 1 AND 30),
+  next_notification_at timestamptz,
+  last_notification_at timestamptz,
+  last_match_security_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, preset_name)
@@ -471,6 +476,18 @@ CREATE TABLE IF NOT EXISTS screen_search_log (
   near_count        integer NOT NULL DEFAULT 0,
   elapsed_ms        integer,
   request_id        uuid,
+  created_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_notification (
+  notification_id  bigserial PRIMARY KEY,
+  user_id           uuid NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+  preset_id         bigint REFERENCES screen_preset(preset_id) ON DELETE CASCADE,
+  notification_type varchar(40) NOT NULL DEFAULT 'PRESET_MATCH',
+  title             varchar(200) NOT NULL,
+  body              text NOT NULL,
+  payload_json      jsonb NOT NULL DEFAULT '{}'::jsonb,
+  read_at           timestamptz,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
 

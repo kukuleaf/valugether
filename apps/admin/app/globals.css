@@ -13,7 +13,8 @@ a {
 }
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 .shell {
@@ -130,6 +131,15 @@ th {
 .btn.secondary {
   color: #181a20;
   background: #eceff4;
+}
+.btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.error-text {
+  color: #b42318;
+  font-size: 14px;
+  margin: 12px 0 0;
 }
 .dialog-backdrop {
   position: fixed;

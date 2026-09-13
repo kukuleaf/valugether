@@ -39,7 +39,8 @@ INSERT INTO batch_definition(batch_code,batch_name,schedule_cron,timezone_name,i
 ('US_EOD_PRICE_SYNC','미국 EOD 가격 동기화','30 8 * * 2-6','Asia/Seoul',false,'미국 장 마감/공급자 반영 지연 고려 후 조정'),
 ('DART_FINANCIAL_SYNC','DART 재무 동기화','0 3 * * *','Asia/Seoul',false,'증분 공시 수집'),
 ('SEC_FINANCIAL_SYNC','SEC 재무 동기화','30 17 * * *','Asia/Seoul',false,'nightly bulk 또는 증분'),
-('DERIVED_METRIC_RECALC','파생지표 재계산','0 10 * * *','Asia/Seoul',false,'변경된 종목만 계산')
+('DERIVED_METRIC_RECALC','파생지표 재계산','0 10 * * *','Asia/Seoul',false,'변경된 종목만 계산'),
+('PRESET_MATCH_NOTIFY','맞춤기업 조건 충족 알림','30 10 * * *','Asia/Seoul',false,'가격 및 파생지표 갱신 뒤 알림 주기가 도래한 프리셋을 평가')
 ON CONFLICT (batch_code) DO UPDATE SET
   batch_name=EXCLUDED.batch_name,
   schedule_cron=EXCLUDED.schedule_cron,
