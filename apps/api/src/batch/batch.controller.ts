@@ -1,19 +1,32 @@
-import { Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Controller, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { MarketPriceSyncService } from './market-price-sync.service';
 import { PresetAlertsService } from '../presets/preset-alerts.service';
+import { MasterDataSyncService } from './master-data-sync.service';
+import { FinancialSyncService } from './financial-sync.service';
 @Controller('admin/batches')
 @UseGuards(AccessTokenGuard, AdminGuard)
 export class BatchController {
   constructor(
     private readonly sync: MarketPriceSyncService,
     private readonly presetAlerts: PresetAlertsService,
+    private readonly masterData: MasterDataSyncService,
+    private readonly financial: FinancialSyncService,
   ) {}
   @Post('market/:mic') run(@Param('mic') mic: string) {
     return this.sync.run(mic);
   }
   @Post('preset-alerts') runPresetAlerts() {
     return this.presetAlerts.runDue();
+  }
+  @Post('master/:market') runMasterData(@Param('market') market: string) {
+    return this.masterData.run(market);
+  }
+  @Post('financial/:market') runFinancialData(
+    @Param('market') market: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.financial.run(market, Number(limit ?? 20));
   }
 }

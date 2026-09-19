@@ -2,7 +2,7 @@
 
 초보자를 위한 현명한 기업 찾기.
 
-국내 주식을 우선 대상으로 재무제표와 일별 주가를 수집합니다.
+국내·미국 주식을 대상으로 재무제표와 일별 주가를 수집합니다.
 사용자가 원하는 조건과 **정확히 일치하거나 근접한 기업**을 찾는 상업용 앱의
 초기 설계/샘플 프로젝트입니다. 미국 시장은 후속 범위입니다.
 
@@ -18,7 +18,7 @@
 - DB: PostgreSQL (DDL/Seed SQL 직접 제공)
 - Cache/Queue: Redis + BullMQ 예정
 - 인증: 이메일/비밀번호 + Google/Kakao/Naver 소셜 로그인 확장 구조
-- MVP 시장: 한국, 미국·기타 해외는 추후 확장
+- 대상 시장: KOSPI, KOSDAQ, NASDAQ, NYSE
 - MVP 목표: 데이터 수집·정규화·지표 계산·근거 설명을 포함한 회사 추천 로직 완성
 - 일반 검색: 저평가 / 안정 / 성장 / 배당
 - 고급 검색
@@ -50,8 +50,8 @@
 4. `.env.example`을 복사해 API 키/DB 정보를 입력
 5. API 서버 실행
 6. 모바일 앱 및 관리자 웹 실행
-7. 개발 초기는 MOCK 데이터로 동작 확인
-8. OpenDART/SEC/Market Data 키를 준비하고 Provider 구현/활성화
+7. OpenDART/SEC/KIS 환경변수 설정
+8. 아래 실데이터 동기화 실행
 
 ## 로컬 인프라
 
@@ -73,7 +73,7 @@ docker compose up -d
 
 `00_create_database.sql`은 접속 DB 자체를 만드는 파일이므로 PostgreSQL 관리자 DB(`postgres`)에서 실행합니다.
 
-그 후 생성한 DB에 접속하여 `01`~`11`을 순서대로 실행합니다.
+그 후 생성한 DB에 접속하여 `01`~`12`를 순서대로 실행합니다.
 
 ```text
 database/sql/
@@ -89,6 +89,7 @@ database/sql/
   09_seed_demo.sql
   10_terms_versioning.sql
   11_preset_notifications.sql
+  12_global_alerts_exchanges.sql
 ```
 
 로컬 샘플 계정(`09_seed_demo.sql` 적용 후):
@@ -103,6 +104,25 @@ database/sql/
 ```bash
 npm run db:terms
 ```
+
+## 실데이터 동기화
+
+```bash
+npm run db:global-alerts-exchanges
+cd apps/api
+npm run sync-data -- master KR
+npm run sync-data -- master US
+npm run sync-data -- financial KR 20
+npm run sync-data -- financial US 20
+npm run sync-data -- price XKRX
+npm run sync-data -- price XKOS
+npm run sync-data -- price XNAS
+npm run sync-data -- price XNYS
+npm run data-status
+```
+
+KIS 접근 토큰은 발급 결과를 `.cache/kis-token.json`에 저장해 유효기간 동안 재사용합니다.
+유효 토큰이 이미 발급됐지만 캐시에 없다면 같은 날 가격 동기화를 다시 실행하지 않습니다.
 
 ## 문서
 

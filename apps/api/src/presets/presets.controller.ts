@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Inject,
+  NotFoundException,
   Param,
   ParseIntPipe,
   Patch,
@@ -45,9 +46,10 @@ class SavePresetDto {
   @Type(() => PresetConditionDto)
   conditions!: PresetConditionDto[];
   @IsOptional() @IsArray() markets?: string[];
+  @IsOptional() @IsArray() exchanges?: string[];
   @IsOptional() @IsIn(['GENERAL', 'ADVANCED_BASIC', 'ADVANCED_DETAIL']) mode?: string;
 }
-class PresetNotificationDto {
+class NotificationSettingsDto {
   @IsBoolean() enabled!: boolean;
   @IsInt() @Min(1) @Max(30) intervalDays!: number;
 }
@@ -61,11 +63,63 @@ export class PresetsController {
   ) {}
 
   @Get() async list(@Req() req: any) {
+    return this.loadPresets(req.user.sub);
+  }
+
+  @Get('notification-settings') async notificationSettings(@Req() req: any) {
+    const result = await this.db.query(
+      `insert into user_notification_setting(user_id)
+       values($1)
+       on conflict(user_id) do update set user_id=excluded.user_id
+       returning custom_company_enabled,notification_interval_days,
+                 next_notification_at,last_notification_at`,
+      [req.user.sub],
+    );
+    return result.rows[0];
+  }
+
+  @Patch('notification-settings')
+  async updateNotificationSettings(@Req() req: any, @Body() dto: NotificationSettingsDto) {
+    const result = await this.db.query(
+      `insert into user_notification_setting(
+         user_id,custom_company_enabled,notification_interval_days,next_notification_at
+       ) values($1,$2,$3,case when $2 then now() else null end)
+       on conflict(user_id) do update
+       set custom_company_enabled=excluded.custom_company_enabled,
+           notification_interval_days=excluded.notification_interval_days,
+           next_notification_at=case
+             when excluded.custom_company_enabled=false then null
+             when user_notification_setting.custom_company_enabled=false then now()
+             else user_notification_setting.next_notification_at
+           end,
+           updated_at=now()
+       returning custom_company_enabled,notification_interval_days,
+                 next_notification_at,last_notification_at`,
+      [req.user.sub, dto.enabled, dto.intervalDays],
+    );
+    return result.rows[0];
+  }
+
+  @Get('notifications/inbox')
+  async notifications(@Req() req: any) {
+    const result = await this.db.query(
+      `select notification_id,preset_id,title,body,payload_json,read_at,created_at
+       from user_notification where user_id=$1 order by created_at desc limit 50`,
+      [req.user.sub],
+    );
+    return result.rows;
+  }
+
+  @Get(':id') async detail(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+    const rows = await this.loadPresets(req.user.sub, id);
+    if (!rows.length) throw new NotFoundException('맞춤기업 기준을 찾을 수 없습니다.');
+    return rows[0];
+  }
+
+  private async loadPresets(userId: string, presetId?: number) {
     const r = await this.db.query(
       `select p.preset_id, p.preset_name, p.description, p.search_mode,
-              p.market_filter_json, p.notification_enabled,
-              p.notification_interval_days, p.next_notification_at,
-              p.last_notification_at, p.created_at,
+              p.market_filter_json, p.exchange_filter_json, p.created_at,
               coalesce(
                 json_agg(
                   json_build_object(
@@ -81,36 +135,61 @@ export class PresetsController {
        from screen_preset p
        left join screen_preset_condition c on c.preset_id = p.preset_id
        left join financial_metric m on m.metric_id = c.metric_id
-       where p.user_id = $1
+       where p.user_id = $1 and ($2::bigint is null or p.preset_id=$2)
        group by p.preset_id
        order by p.updated_at desc`,
-      [req.user.sub],
+      [userId, presetId ?? null],
     );
     return r.rows;
   }
 
   @Post() async save(@Req() req: any, @Body() dto: SavePresetDto) {
+    return this.persistPreset(req.user.sub, dto);
+  }
+
+  @Patch(':id') async update(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SavePresetDto,
+  ) {
+    return this.persistPreset(req.user.sub, dto, id);
+  }
+
+  private async persistPreset(userId: string, dto: SavePresetDto, presetId?: number) {
     const client = await this.db.connect();
     try {
       await client.query('begin');
-      const p = await client.query(
-        `insert into screen_preset(
-           user_id, preset_name, description, market_filter_json, search_mode
-         ) values ($1, $2, $3, $4::jsonb, $5)
-         on conflict(user_id, preset_name) do update
-         set description = excluded.description,
-             market_filter_json = excluded.market_filter_json,
-             search_mode = excluded.search_mode,
-             updated_at = now()
-         returning preset_id`,
-        [
-          req.user.sub,
-          dto.name,
-          dto.description ?? null,
-          JSON.stringify(dto.markets ?? []),
-          dto.mode ?? 'ADVANCED_BASIC',
-        ],
-      );
+      const values = [
+        userId,
+        dto.name,
+        dto.description ?? null,
+        JSON.stringify(dto.markets ?? []),
+        JSON.stringify(dto.exchanges ?? []),
+        dto.mode ?? 'ADVANCED_BASIC',
+      ];
+      const p = presetId
+        ? await client.query(
+            `update screen_preset
+             set preset_name=$2,description=$3,market_filter_json=$4::jsonb,
+                 exchange_filter_json=$5::jsonb,search_mode=$6,updated_at=now()
+             where preset_id=$7 and user_id=$1
+             returning preset_id`,
+            [...values, presetId],
+          )
+        : await client.query(
+            `insert into screen_preset(
+               user_id,preset_name,description,market_filter_json,exchange_filter_json,search_mode
+             ) values($1,$2,$3,$4::jsonb,$5::jsonb,$6)
+             on conflict(user_id,preset_name) do update
+             set description=excluded.description,
+                 market_filter_json=excluded.market_filter_json,
+                 exchange_filter_json=excluded.exchange_filter_json,
+                 search_mode=excluded.search_mode,
+                 updated_at=now()
+             returning preset_id`,
+            values,
+          );
+      if (!p.rowCount) throw new NotFoundException('맞춤기업 기준을 찾을 수 없습니다.');
       const id = p.rows[0].preset_id;
       await client.query('delete from screen_preset_condition where preset_id=$1', [id]);
       let ord = 0;
@@ -130,7 +209,7 @@ export class PresetsController {
       }
       await client.query('commit');
       await this.audit.write({
-        actorUserId: req.user.sub,
+        actorUserId: userId,
         actionCode: 'PRESET_CHANGE',
         targetType: 'PRESET',
         targetId: String(id),
@@ -143,35 +222,6 @@ export class PresetsController {
     } finally {
       client.release();
     }
-  }
-
-  @Patch(':id/notification')
-  async updateNotification(
-    @Req() req: any,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: PresetNotificationDto,
-  ) {
-    const result = await this.db.query(
-      `update screen_preset
-       set notification_enabled=$3,
-           notification_interval_days=$4,
-           next_notification_at=case when $3 then coalesce(next_notification_at,now()) else null end,
-           updated_at=now()
-       where preset_id=$1 and user_id=$2
-       returning preset_id,notification_enabled,notification_interval_days,next_notification_at`,
-      [id, req.user.sub, dto.enabled, dto.intervalDays],
-    );
-    return result.rows[0] ?? { presetId: id, updated: false };
-  }
-
-  @Get('notifications/inbox')
-  async notifications(@Req() req: any) {
-    const result = await this.db.query(
-      `select notification_id,preset_id,title,body,payload_json,read_at,created_at
-       from user_notification where user_id=$1 order by created_at desc limit 50`,
-      [req.user.sub],
-    );
-    return result.rows;
   }
 
   @Delete(':id') async remove(@Req() req: any, @Param('id', ParseIntPipe) id: number) {

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, H1, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { api, runScreening, ScreenPreset, ScreenResult } from '../../lib/api';
 import { getAccess } from '../../lib/session';
@@ -56,6 +56,7 @@ export default function CustomCompanies() {
       const data = await runScreening({
         conditions: selected.conditions,
         marketCodes: selected.market_filter_json,
+        exchangeCodes: selected.exchange_filter_json,
         limit: 20,
       });
       setResults(data.results);
@@ -63,27 +64,6 @@ export default function CustomCompanies() {
       setError(cause.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const updateNotification = async (enabled: boolean, intervalDays?: number) => {
-    if (!selected) return;
-    const days = intervalDays ?? Number(selected.notification_interval_days || 1);
-    try {
-      await api(
-        `/presets/${selected.preset_id}/notification`,
-        { method: 'PATCH', body: JSON.stringify({ enabled, intervalDays: days }) },
-        true,
-      );
-      setPresets((current) =>
-        current.map((preset) =>
-          preset.preset_id === selected.preset_id
-            ? { ...preset, notification_enabled: enabled, notification_interval_days: days }
-            : preset,
-        ),
-      );
-    } catch (cause: any) {
-      setError(cause.message);
     }
   };
 
@@ -162,32 +142,18 @@ export default function CustomCompanies() {
                 <View style={styles.settingHeader}>
                   <View style={styles.settingCopy}>
                     <Text style={styles.cardTitle}>{selected.preset_name}</Text>
-                    <Muted>{selected.conditions.length}개 조건 · 최신 데이터 기준</Muted>
+                    <Muted>
+                      {selected.conditions.length}개 조건 ·{' '}
+                      {selected.exchange_filter_json?.join(' · ') || '전체 시장'}
+                    </Muted>
                   </View>
-                  <Switch
-                    accessibilityLabel="조건 충족 알림"
-                    value={selected.notification_enabled}
-                    onValueChange={(value) => updateNotification(value)}
-                  />
-                </View>
-                <Text style={styles.sectionLabel}>알림 주기</Text>
-                <View style={styles.intervalRow}>
-                  {[1, 3, 7, 14].map((days) => (
-                    <Pressable
-                      key={days}
-                      onPress={() => updateNotification(selected.notification_enabled, days)}
-                      style={[
-                        styles.interval,
-                        selected.notification_interval_days === days && styles.intervalActive,
-                      ]}
-                    >
-                      <Text style={styles.intervalText}>
-                        {days === 1 ? '매일' : `${days}일마다`}
-                      </Text>
-                    </Pressable>
-                  ))}
                 </View>
                 <Button title="오늘의 조건 충족 기업 조회" onPress={search} />
+                <Button
+                  title="기준 상세·수정"
+                  secondary
+                  onPress={() => router.push(`/presets/${selected.preset_id}`)}
+                />
               </Card>
             )}
           </>
@@ -240,16 +206,6 @@ const styles = StyleSheet.create({
   presetChipTextActive: { color: palette.accent },
   settingHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingCopy: { flex: 1 },
-  sectionLabel: { color: palette.muted, fontSize: 12, fontWeight: '700', marginTop: 5 },
-  intervalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  interval: {
-    backgroundColor: '#F0F4F5',
-    borderRadius: 9,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  intervalActive: { backgroundColor: '#D9EEE9' },
-  intervalText: { color: palette.text, fontSize: 12, fontWeight: '700' },
   error: { color: '#A00000', lineHeight: 21 },
   results: { gap: 9 },
   resultTitle: { color: palette.text, fontSize: 18, fontWeight: '900' },

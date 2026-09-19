@@ -5,8 +5,12 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { FetchEodOptions, MarketDataProvider } from '../core/market-data.provider';
 import { NormalizedDailyPrice } from '../core/normalized-models';
-import { KisDailyPriceResponse, KisTokenResponse } from './kis.external';
-import { toNormalizedKisPrice } from './kis.mapper';
+import {
+  KisDailyPriceResponse,
+  KisOverseasDailyPriceResponse,
+  KisTokenResponse,
+} from './kis.external';
+import { toNormalizedKisOverseasPrice, toNormalizedKisPrice } from './kis.mapper';
 
 interface KisTokenCache {
   accessToken: string;
@@ -20,6 +24,7 @@ export class KisMarketProvider implements MarketDataProvider {
   readonly code = 'KIS';
   private accessToken?: { value: string; expiresAt: number };
   private tokenPromise?: Promise<string>;
+  private failures: Array<{ symbol: string; error: string }> = [];
 
   constructor(private readonly config: ConfigService) {}
 
@@ -29,21 +34,36 @@ export class KisMarketProvider implements MarketDataProvider {
       throw new Error('KIS requires provider_security_map symbols before price sync');
 
     const result: NormalizedDailyPrice[] = [];
+    this.failures = [];
     for (const symbol of symbols) {
-      const rows = await this.fetchDaily(symbol);
-      for (const row of rows) {
-        const normalized = toNormalizedKisPrice(row, symbol, options.exchangeMic);
-        if (!normalized) continue;
-        if (options.date && normalized.tradeDate !== options.date) continue;
-        result.push(normalized);
-        break;
+      try {
+        const overseasExchange = this.overseasExchange(options.exchangeMic);
+        const normalizedRows = overseasExchange
+          ? (await this.fetchOverseasDaily(symbol, overseasExchange)).map((row) =>
+              toNormalizedKisOverseasPrice(row, symbol, options.exchangeMic, overseasExchange),
+            )
+          : (await this.fetchDomesticDaily(symbol)).map((row) =>
+              toNormalizedKisPrice(row, symbol, options.exchangeMic),
+            );
+        for (const normalized of normalizedRows) {
+          if (!normalized) continue;
+          if (options.date && normalized.tradeDate !== options.date) continue;
+          result.push(normalized);
+          break;
+        }
+      } catch (error: any) {
+        this.failures.push({ symbol, error: String(error?.message ?? error).slice(0, 300) });
       }
       await this.throttle();
     }
     return result;
   }
 
-  private async fetchDaily(symbol: string) {
+  diagnostics() {
+    return { failures: [...this.failures] };
+  }
+
+  private async fetchDomesticDaily(symbol: string) {
     const base = this.config.get('KIS_BASE_URL') ?? 'https://openapi.koreainvestment.com:9443';
     const url = new URL(`${base}/uapi/domestic-stock/v1/quotations/inquire-daily-price`);
     url.searchParams.set('FID_COND_MRKT_DIV_CODE', 'J');
@@ -51,7 +71,7 @@ export class KisMarketProvider implements MarketDataProvider {
     url.searchParams.set('FID_PERIOD_DIV_CODE', 'D');
     url.searchParams.set('FID_ORG_ADJ_PRC', '1');
 
-    const response = await fetch(url, {
+    const response = await this.fetchWithRetry(url, {
       headers: {
         authorization: `Bearer ${await this.token()}`,
         appkey: this.config.getOrThrow('KIS_APP_KEY'),
@@ -60,11 +80,59 @@ export class KisMarketProvider implements MarketDataProvider {
         custtype: 'P',
       },
     });
-    if (!response.ok) throw new Error(`KIS HTTP ${response.status}`);
     const body = (await response.json()) as KisDailyPriceResponse;
     if (body.rt_cd !== '0')
       throw new Error(`KIS ${body.msg_cd ?? 'UNKNOWN'}: ${body.msg1 ?? 'request failed'}`);
     return body.output ?? [];
+  }
+
+  private async fetchOverseasDaily(symbol: string, exchange: string) {
+    const base = this.config.get('KIS_BASE_URL') ?? 'https://openapi.koreainvestment.com:9443';
+    const url = new URL(`${base}/uapi/overseas-price/v1/quotations/dailyprice`);
+    url.searchParams.set('AUTH', '');
+    url.searchParams.set('EXCD', exchange);
+    url.searchParams.set('SYMB', symbol);
+    url.searchParams.set('GUBN', '0');
+    url.searchParams.set('BYMD', '');
+    url.searchParams.set('MODP', '1');
+    const response = await this.fetchWithRetry(url, {
+      headers: {
+        authorization: `Bearer ${await this.token()}`,
+        appkey: this.config.getOrThrow('KIS_APP_KEY'),
+        appsecret: this.config.getOrThrow('KIS_APP_SECRET'),
+        tr_id: 'HHDFS76240000',
+        custtype: 'P',
+      },
+    });
+    const body = (await response.json()) as KisOverseasDailyPriceResponse;
+    if (body.rt_cd !== '0') {
+      throw new Error(`KIS ${body.msg_cd ?? 'UNKNOWN'}: ${body.msg1 ?? 'request failed'}`);
+    }
+    return body.output2 ?? [];
+  }
+
+  private overseasExchange(exchangeMic: string) {
+    if (exchangeMic === 'XNAS') return 'NAS';
+    if (exchangeMic === 'XNYS') return 'NYS';
+    if (exchangeMic === 'ARCX') return 'AMS';
+    return null;
+  }
+
+  private async fetchWithRetry(url: URL, init: RequestInit) {
+    let lastError = 'request failed';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch(url, init);
+        if (response.ok) return response;
+        const body = (await response.text()).slice(0, 300);
+        lastError = `HTTP ${response.status}${body ? `: ${body}` : ''}`;
+        if (response.status < 500 && response.status !== 429) break;
+      } catch (error: any) {
+        lastError = String(error?.message ?? error);
+      }
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+    }
+    throw new Error(`KIS ${lastError}`);
   }
 
   private async token(): Promise<string> {

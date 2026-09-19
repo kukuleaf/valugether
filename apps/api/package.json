@@ -7,7 +7,9 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "typecheck": "tsc --noEmit",
-    "create-admin": "tsx scripts/create-admin.ts"
+    "create-admin": "tsx scripts/create-admin.ts",
+    "sync-data": "npm run build --silent && node --env-file=.env dist/scripts/sync-data.js",
+    "data-status": "npm run build --silent && node --env-file=.env dist/scripts/data-status.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.3",

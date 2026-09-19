@@ -70,6 +70,7 @@ export type ScreenResult = {
   ticker: string;
   name: string;
   marketCode: string;
+  exchangeCode: string;
   matchType: 'EXACT' | 'NEAR';
   similarity: number;
   details: any[];
@@ -80,15 +81,13 @@ export type ScreenPreset = {
   description: string | null;
   search_mode: 'GENERAL' | 'ADVANCED_BASIC' | 'ADVANCED_DETAIL';
   market_filter_json: string[];
-  notification_enabled: boolean;
-  notification_interval_days: number;
-  next_notification_at: string | null;
-  last_notification_at: string | null;
+  exchange_filter_json: string[];
   conditions: ScreenCondition[];
 };
 export async function runScreening(body: {
   strategyCode?: string;
   marketCodes?: string[];
+  exchangeCodes?: string[];
   conditions?: ScreenCondition[];
   limit?: number;
 }) {

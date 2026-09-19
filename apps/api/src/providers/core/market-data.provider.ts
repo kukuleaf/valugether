@@ -9,4 +9,5 @@ export interface FetchEodOptions {
 export interface MarketDataProvider {
   readonly code: string;
   fetchLatestEod(options: FetchEodOptions): Promise<NormalizedDailyPrice[]>;
+  diagnostics?(): { failures: Array<{ symbol: string; error: string }> };
 }

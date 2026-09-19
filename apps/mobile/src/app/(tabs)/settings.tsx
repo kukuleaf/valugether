@@ -77,7 +77,8 @@ export default function Settings() {
             </Card>
           </View>
           <Card>
-            <Button title="맞춤기업·알림 관리" onPress={() => router.push('/custom')} />
+            <Button title="알림 설정" onPress={() => router.push('/notification-settings')} />
+            <Button title="맞춤기업 기준 관리" secondary onPress={() => router.push('/custom')} />
             <Button title="로그아웃" secondary onPress={logout} />
           </Card>
         </>

@@ -1,8 +1,9 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Button, Card, H1, Input, LoadingState, Muted, Page, palette } from '../../components/ui';
-import { api, ScreenCondition } from '../../lib/api';
+import { defaultExchangeCodes, ExchangeSelector } from '../../components/ExchangeSelector';
+import { api, ScreenCondition, ScreenPreset } from '../../lib/api';
 import { getAccess } from '../../lib/session';
 
 type Operator = ScreenCondition['operator'];
@@ -64,6 +65,8 @@ const unitLabels: Record<string, string> = {
 };
 
 export default function Advanced() {
+  const params = useLocalSearchParams<{ presetId?: string }>();
+  const presetId = Array.isArray(params.presetId) ? params.presetId[0] : params.presetId;
   const [mode, setMode] = useState<'BASIC' | 'DETAIL'>('BASIC');
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +80,8 @@ export default function Advanced() {
   const [useDebtRatio, setUseDebtRatio] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [presetName, setPresetName] = useState('나의 기업 기준');
+  const [exchangeCodes, setExchangeCodes] = useState<string[]>([...defaultExchangeCodes]);
+  const [operatorOverrides, setOperatorOverrides] = useState<Record<string, Operator>>({});
 
   useEffect(() => {
     api<Metric[]>('/metrics')
@@ -90,6 +95,33 @@ export default function Advanced() {
       .catch(() => setLoadError('검색 항목을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!presetId) return;
+    api<ScreenPreset>(`/presets/${presetId}`, undefined, true)
+      .then((preset) => {
+        setPresetName(preset.preset_name);
+        setMode(preset.search_mode === 'ADVANCED_DETAIL' ? 'DETAIL' : 'BASIC');
+        setExchangeCodes(
+          preset.exchange_filter_json?.length
+            ? preset.exchange_filter_json
+            : [...defaultExchangeCodes],
+        );
+        setValues(
+          Object.fromEntries(
+            preset.conditions.map((item) => [item.metricCode, String(item.target)]),
+          ),
+        );
+        setOperatorOverrides(
+          Object.fromEntries(preset.conditions.map((item) => [item.metricCode, item.operator])),
+        );
+        setNoLossThreeYears(
+          preset.conditions.some((item) => item.metricCode === 'PROFITABLE_CONSECUTIVE_YEARS'),
+        );
+        setUseDebtRatio(preset.conditions.some((item) => item.metricCode === 'DEBT_RATIO'));
+      })
+      .catch((cause: any) => setLoadError(cause.message));
+  }, [presetId]);
 
   const metricMap = useMemo(
     () => new Map(metrics.map((metric) => [metric.metric_code, metric])),
@@ -107,7 +139,7 @@ export default function Advanced() {
 
   const condition = (metric: Metric, target: number): ScreenCondition => ({
     metricCode: metric.metric_code,
-    operator: metric.default_operator ?? 'GTE',
+    operator: operatorOverrides[metric.metric_code] ?? metric.default_operator ?? 'GTE',
     target,
   });
 
@@ -144,7 +176,13 @@ export default function Advanced() {
   const search = () => {
     const conditions = buildConditions();
     if (!conditions) return;
-    router.push({ pathname: '/results', params: { conditions: JSON.stringify(conditions) } });
+    router.push({
+      pathname: '/results',
+      params: {
+        conditions: JSON.stringify(conditions),
+        exchanges: JSON.stringify(exchangeCodes),
+      },
+    });
   };
 
   const openSave = async () => {
@@ -162,14 +200,20 @@ export default function Advanced() {
     const conditions = buildConditions();
     if (!conditions || !presetName.trim()) return;
     try {
-      await api(
-        '/presets',
+      const response = await api<{ presetId: number }>(
+        presetId ? `/presets/${presetId}` : '/presets',
         {
-          method: 'POST',
+          method: presetId ? 'PATCH' : 'POST',
           body: JSON.stringify({
             name: presetName.trim(),
             conditions,
-            markets: ['US', 'KR'],
+            markets: [
+              ...(exchangeCodes.some((code) => code === 'KOSPI' || code === 'KOSDAQ')
+                ? ['KR']
+                : []),
+              ...(exchangeCodes.some((code) => code === 'NASDAQ' || code === 'NYSE') ? ['US'] : []),
+            ],
+            exchanges: exchangeCodes,
             mode: mode === 'BASIC' ? 'ADVANCED_BASIC' : 'ADVANCED_DETAIL',
           }),
         },
@@ -177,9 +221,10 @@ export default function Advanced() {
       );
       setSaveOpen(false);
       setHelp({
-        title: '프리셋 저장 완료',
-        body: '맞춤기업 탭에서도 같은 프리셋으로 기업 조회와 알림 설정을 할 수 있습니다.',
+        title: presetId ? '맞춤기업 기준 수정 완료' : '프리셋 저장 완료',
+        body: '맞춤기업에서 상세 조건과 오늘의 조건 충족 기업을 확인할 수 있습니다.',
       });
+      if (presetId) router.replace(`/presets/${response.presetId}`);
     } catch (cause: any) {
       setHelp({ title: '저장 실패', body: cause.message });
     }
@@ -233,6 +278,7 @@ export default function Advanced() {
       <Page>
         <H1>조건 검색</H1>
         <Muted>원하는 기준을 정하면 조건에 맞거나 가까운 회사를 찾아드립니다.</Muted>
+        <ExchangeSelector selected={exchangeCodes} onChange={setExchangeCodes} />
         <View style={styles.segment}>
           {(['BASIC', 'DETAIL'] as const).map((item) => (
             <Pressable
@@ -351,7 +397,11 @@ export default function Advanced() {
         )}
 
         <Button title="회사 찾기" onPress={search} />
-        <Button title="이 조건을 프리셋으로 저장" secondary onPress={openSave} />
+        <Button
+          title={presetId ? '맞춤기업 기준 수정' : '이 조건을 프리셋으로 저장'}
+          secondary
+          onPress={openSave}
+        />
       </Page>
 
       <Modal
@@ -377,15 +427,15 @@ export default function Advanced() {
       >
         <View style={styles.modalBackdrop}>
           <Card style={styles.helpCard}>
-            <Text style={styles.modalTitle}>프리셋 저장</Text>
-            <Muted>조건검색과 맞춤기업 탭에서 함께 사용됩니다.</Muted>
+            <Text style={styles.modalTitle}>{presetId ? '맞춤기업 기준 수정' : '프리셋 저장'}</Text>
+            <Muted>선택한 시장과 조건이 맞춤기업에 저장됩니다.</Muted>
             <Input
               accessibilityLabel="프리셋 이름"
               value={presetName}
               onChangeText={setPresetName}
               placeholder="프리셋 이름"
             />
-            <Button title="저장" onPress={savePreset} />
+            <Button title={presetId ? '수정 저장' : '저장'} onPress={savePreset} />
             <Button title="취소" secondary onPress={() => setSaveOpen(false)} />
           </Card>
         </View>

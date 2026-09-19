@@ -19,6 +19,12 @@ const marketLabels: Record<string, string> = {
   KR: '한국',
   US: '미국',
 };
+const exchangeLabels: Record<string, string> = {
+  KOSPI: '코스피',
+  KOSDAQ: '코스닥',
+  NASDAQ: '나스닥',
+  NYSE: '뉴욕증권거래소',
+};
 
 function metricValue(value: number, unitType?: string) {
   if (unitType === 'PERCENT') return `${value}%`;
@@ -29,7 +35,11 @@ function metricValue(value: number, unitType?: string) {
 }
 
 export default function Results() {
-  const params = useLocalSearchParams<{ strategy?: string; conditions?: string }>();
+  const params = useLocalSearchParams<{
+    strategy?: string;
+    conditions?: string;
+    exchanges?: string;
+  }>();
   const [data, setData] = useState<{
     exactCount: number;
     nearCount: number;
@@ -41,11 +51,12 @@ export default function Results() {
       try {
         setError(null);
         const conditions = params.conditions ? JSON.parse(params.conditions) : undefined;
+        const exchangeCodes = params.exchanges ? JSON.parse(params.exchanges) : undefined;
         setData(
           await runScreening({
             strategyCode: params.strategy,
             conditions,
-            marketCodes: ['US', 'KR'],
+            exchangeCodes,
             limit: 50,
           }),
         );
@@ -53,7 +64,7 @@ export default function Results() {
         setError(e.message ?? String(e));
       }
     })();
-  }, [params.strategy, params.conditions]);
+  }, [params.strategy, params.conditions, params.exchanges]);
   return (
     <View style={styles.screen}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
@@ -92,7 +103,10 @@ export default function Results() {
                       <View style={styles.company}>
                         <Text style={styles.ticker}>{x.ticker}</Text>
                         <Muted>
-                          {x.name} · {marketLabels[x.marketCode] ?? x.marketCode}
+                          {x.name} ·{' '}
+                          {exchangeLabels[x.exchangeCode] ??
+                            marketLabels[x.marketCode] ??
+                            x.marketCode}
                         </Muted>
                       </View>
                       <View style={[styles.badge, x.matchType === 'NEAR' && styles.near]}>

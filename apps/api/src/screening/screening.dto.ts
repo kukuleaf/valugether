@@ -20,6 +20,7 @@ export class ScreenConditionDto {
 }
 export class ScreenSearchDto {
   @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) marketCodes?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) exchangeCodes?: string[];
   @IsOptional() @IsString() strategyCode?: string;
   @IsOptional()
   @IsArray()

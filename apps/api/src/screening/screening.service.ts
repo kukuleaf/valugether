@@ -31,17 +31,20 @@ export class ScreeningService {
       throw new BadRequestException(`등록되지 않은 metric: ${missing.join(', ')}`);
     }
     const marketCodes = dto.marketCodes?.length ? dto.marketCodes : null;
+    const exchangeCodes = dto.exchangeCodes?.length ? dto.exchangeCodes : null;
     const rows = await this.db.query(
       `select s.security_id,s.ticker,s.security_name,e.market_code,e.exchange_code,
               m.metric_code,l.numeric_value,l.as_of_date
        from security s join company c on c.company_id=s.company_id join exchange e on e.exchange_id=s.exchange_id
        join latest_metric_value l on l.security_id=s.security_id
        join financial_metric m on m.metric_id=l.metric_id
-       where s.is_active=true and m.metric_code=any($1::text[])
+       where s.is_active=true and c.is_active=true and e.is_active=true
+         and m.metric_code=any($1::text[])
          and ($2::text[] is null or e.market_code=any($2::text[]))
-         and ($3::boolean=false or c.is_financial=false)
+         and ($3::text[] is null or e.exchange_code=any($3::text[]))
+         and ($4::boolean=false or c.is_financial=false)
        order by s.security_id`,
-      [metricCodes, marketCodes, Boolean(dto.strategyCode)],
+      [metricCodes, marketCodes, exchangeCodes, Boolean(dto.strategyCode)],
     );
 
     const bySecurity = new Map<number, any>();

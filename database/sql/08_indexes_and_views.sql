@@ -12,6 +12,9 @@ CREATE INDEX IF NOT EXISTS ix_audit_actor_date ON audit_log(actor_user_id, creat
 CREATE INDEX IF NOT EXISTS ix_batch_job_code_date ON batch_job_run(batch_code, started_at DESC);
 CREATE INDEX IF NOT EXISTS ix_screen_preset_due_notification ON screen_preset(next_notification_at) WHERE notification_enabled=true;
 CREATE INDEX IF NOT EXISTS ix_user_notification_user_created ON user_notification(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_user_notification_setting_due
+  ON user_notification_setting(next_notification_at)
+  WHERE custom_company_enabled=true;
 
 CREATE OR REPLACE VIEW v_security_master AS
 SELECT s.security_id, e.market_code, e.exchange_code, e.mic,
@@ -61,7 +64,7 @@ BEGIN
     'common_code_group','common_code','system_setting','app_user','user_password',
     'user_social_account','company','security','data_provider','financial_metric',
     'financial_fact','daily_price','derived_metric_value','latest_metric_value',
-    'screen_metric_tolerance','screen_strategy','screen_preset','watchlist',
+    'screen_metric_tolerance','screen_strategy','screen_preset','user_notification_setting','watchlist',
     'batch_definition','notice'
   ]
   LOOP

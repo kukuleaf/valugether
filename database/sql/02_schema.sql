@@ -444,6 +444,7 @@ CREATE TABLE IF NOT EXISTS screen_preset (
   description       text,
   search_mode       varchar(30) NOT NULL DEFAULT 'ADVANCED_BASIC',
   market_filter_json jsonb NOT NULL DEFAULT '[]'::jsonb,
+  exchange_filter_json jsonb NOT NULL DEFAULT '[]'::jsonb,
   is_default        boolean NOT NULL DEFAULT false,
   notification_enabled boolean NOT NULL DEFAULT false,
   notification_interval_days smallint NOT NULL DEFAULT 1 CHECK (notification_interval_days BETWEEN 1 AND 30),
@@ -489,6 +490,17 @@ CREATE TABLE IF NOT EXISTS user_notification (
   payload_json      jsonb NOT NULL DEFAULT '{}'::jsonb,
   read_at           timestamptz,
   created_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_notification_setting (
+  user_id           uuid PRIMARY KEY REFERENCES app_user(user_id) ON DELETE CASCADE,
+  custom_company_enabled boolean NOT NULL DEFAULT false,
+  notification_interval_days smallint NOT NULL DEFAULT 1
+    CHECK (notification_interval_days BETWEEN 1 AND 30),
+  next_notification_at timestamptz,
+  last_notification_at timestamptz,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
 );
 
 -- =========================

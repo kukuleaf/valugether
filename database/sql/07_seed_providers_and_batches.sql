@@ -1,16 +1,17 @@
 INSERT INTO exchange(market_code, exchange_code, mic, exchange_name, country_code, currency_code, timezone_name) VALUES
-('KR','KRX','XKRX','Korea Exchange','KR','KRW','Asia/Seoul'),
+('KR','KOSPI','XKRX','Korea Exchange KOSPI','KR','KRW','Asia/Seoul'),
+('KR','KOSDAQ','XKOS','Korea Exchange KOSDAQ','KR','KRW','Asia/Seoul'),
 ('US','NASDAQ','XNAS','Nasdaq','US','USD','America/New_York'),
 ('US','NYSE','XNYS','New York Stock Exchange','US','USD','America/New_York'),
 ('US','NYSE_ARCA','ARCX','NYSE Arca','US','USD','America/New_York')
 ON CONFLICT (exchange_code) DO NOTHING;
 
 INSERT INTO data_provider(provider_code, provider_name, provider_type, base_url, is_enabled, priority, notes) VALUES
-('DART','OpenDART','FINANCIAL','https://opendart.fss.or.kr/api',false,10,'한국 공시/재무'),
-('SEC','SEC EDGAR','FINANCIAL','https://data.sec.gov',false,10,'미국 공시/재무. API key 없음, User-Agent 필수'),
-('KIS','한국투자증권 Open API','MARKET','https://openapi.koreainvestment.com:9443',false,15,'한국 주식 일별 가격'),
+('DART','OpenDART','FINANCIAL','https://opendart.fss.or.kr/api',true,10,'한국 공시/재무'),
+('SEC','SEC EDGAR','FINANCIAL','https://data.sec.gov',true,10,'미국 공시/재무. API key 없음, User-Agent 필수'),
+('KIS','한국투자증권 Open API','MARKET','https://openapi.koreainvestment.com:9443',true,15,'한국·미국 주식 일별 가격'),
 ('MARKETSTACK','Marketstack','MARKET','https://api.marketstack.com/v1',false,20,'EOD 가격 후보. 오픈 전 사용조건 재확인'),
-('MOCK','Mock Provider','BOTH',NULL,true,999,'로컬 개발용')
+('MOCK','Mock Provider','BOTH',NULL,false,999,'로컬 개발용')
 ON CONFLICT (provider_code) DO UPDATE SET
   provider_name=EXCLUDED.provider_name,
   base_url=EXCLUDED.base_url,
@@ -25,6 +26,10 @@ FROM data_provider CROSS JOIN LATERAL (
    CASE WHEN provider_code IN ('DART','SEC') THEN 'FINANCIAL_FACTS' ELSE 'EOD_PRICE' END)
 ) v(market_code, capability)
 WHERE provider_code IN ('DART','SEC','KIS','MARKETSTACK')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO data_provider_capability(provider_id, market_code, capability_code)
+SELECT provider_id, 'US', 'EOD_PRICE' FROM data_provider WHERE provider_code='KIS'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO data_provider_capability(provider_id, market_code, capability_code)

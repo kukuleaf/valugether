@@ -39,6 +39,9 @@ export class MarketPriceSyncService {
          where p.provider_id = $1
            and p.is_active = true
            and e.mic = $2
+           and exists(
+             select 1 from latest_metric_value l where l.security_id=s.security_id
+           )
          order by p.external_symbol`,
         [providerId, exchangeMic],
       );
@@ -46,14 +49,22 @@ export class MarketPriceSyncService {
         exchangeMic,
         externalSymbols: mappings.rows.map((x) => x.external_symbol),
       });
+      const providerFailures = provider.diagnostics?.().failures ?? [];
+      errors += providerFailures.length;
       const client = await this.db.connect();
       try {
         await client.query('begin');
         for (const p of prices) {
           try {
             const map = await client.query(
-              `select security_id from provider_security_map where provider_id=$1 and external_symbol=$2 and is_active=true limit 1`,
-              [providerId, p.externalSymbol],
+              `select psm.security_id
+               from provider_security_map psm
+               join security s on s.security_id=psm.security_id
+               join exchange e on e.exchange_id=s.exchange_id
+               where psm.provider_id=$1 and psm.external_symbol=$2
+                 and psm.is_active=true and e.mic=$3
+               limit 1`,
+              [providerId, p.externalSymbol, exchangeMic],
             );
             let securityId = map.rows[0]?.security_id;
             if (!securityId && provider.code === 'MOCK') {
@@ -105,7 +116,7 @@ export class MarketPriceSyncService {
         `update batch_job_run set status_code=$2,ended_at=now(),inserted_count=$3,updated_count=$4,skipped_count=$5,error_count=$6 where batch_run_id=$1`,
         [runId, errors ? 'PARTIAL_SUCCESS' : 'SUCCESS', inserted, updated, skipped, errors],
       );
-      let presetAlerts: { evaluated: number; notified: number } | { error: string };
+      let presetAlerts: unknown;
       try {
         presetAlerts = await this.presetAlerts.runDue();
       } catch (error: any) {
@@ -120,6 +131,7 @@ export class MarketPriceSyncService {
         skipped,
         errors,
         presetAlerts,
+        providerFailures,
         elapsedMs: Date.now() - started,
       };
     } catch (e: any) {

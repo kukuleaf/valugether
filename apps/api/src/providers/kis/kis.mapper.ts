@@ -1,10 +1,35 @@
 import { NormalizedDailyPrice } from '../core/normalized-models';
-import { KisDailyPriceItem } from './kis.external';
+import { KisDailyPriceItem, KisOverseasDailyPriceItem } from './kis.external';
 
 function numberOrNull(value?: string): number | null {
   if (value == null || value.trim() === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function toNormalizedKisOverseasPrice(
+  item: KisOverseasDailyPriceItem,
+  externalSymbol: string,
+  exchangeMic: string,
+  externalExchange: string,
+): NormalizedDailyPrice | null {
+  const tradeDate = isoDate(item.xymd);
+  const close = numberOrNull(item.clos);
+  if (!tradeDate || close == null) return null;
+  return {
+    providerCode: 'KIS',
+    externalSymbol,
+    externalExchange,
+    exchangeMic,
+    tradeDate,
+    open: numberOrNull(item.open),
+    high: numberOrNull(item.high),
+    low: numberOrNull(item.low),
+    close,
+    adjustedClose: close,
+    volume: numberOrNull(item.tvol),
+    currency: 'USD',
+  };
 }
 
 function isoDate(value?: string): string | null {

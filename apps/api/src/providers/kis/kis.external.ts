@@ -20,3 +20,19 @@ export interface KisDailyPriceResponse {
   msg1?: string;
   output?: KisDailyPriceItem[];
 }
+
+export interface KisOverseasDailyPriceItem {
+  xymd?: string;
+  open?: string;
+  high?: string;
+  low?: string;
+  clos?: string;
+  tvol?: string;
+}
+
+export interface KisOverseasDailyPriceResponse {
+  rt_cd?: string;
+  msg_cd?: string;
+  msg1?: string;
+  output2?: KisOverseasDailyPriceItem[];
+}
