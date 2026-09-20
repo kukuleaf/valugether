@@ -27,6 +27,16 @@ export default function Login() {
         <Input placeholder="이메일" autoCapitalize="none" value={email} onChangeText={setEmail} />
         <Input placeholder="비밀번호" secureTextEntry value={password} onChangeText={setPassword} />
         <Button title="로그인" onPress={submit} />
+        <Button
+          title="이메일 인증 메일 다시 받기"
+          secondary
+          onPress={() => router.push({ pathname: '/auth/verify-email', params: { email } })}
+        />
+        <Button
+          title="비밀번호 재설정"
+          secondary
+          onPress={() => router.push({ pathname: '/auth/forgot-password', params: { email } })}
+        />
         <Muted>Google · Kakao · Naver 간편 로그인은 준비 중입니다.</Muted>
       </Card>
       <Text style={{ fontSize: 12, color: palette.muted }}>

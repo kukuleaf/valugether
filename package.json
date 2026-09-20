@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "db:terms": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/10_terms_versioning.sql",
     "db:preset-notifications": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/11_preset_notifications.sql",
-    "db:global-alerts-exchanges": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/12_global_alerts_exchanges.sql"
+    "db:global-alerts-exchanges": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/12_global_alerts_exchanges.sql",
+    "db:auth-tokens": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/13_auth_tokens.sql"
   },
   "devDependencies": {
     "prettier": "^3.6.2"

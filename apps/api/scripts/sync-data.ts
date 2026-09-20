@@ -5,20 +5,22 @@ import { MasterDataSyncService } from '../src/batch/master-data-sync.service';
 import { MarketPriceSyncService } from '../src/batch/market-price-sync.service';
 
 async function main() {
-  const [step = 'master', market = 'KR', value] = process.argv.slice(2);
+  const [step = 'master', market = 'KR', value, mode] = process.argv.slice(2);
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error'] });
   try {
     let result: unknown;
     if (step === 'master') {
       result = await app.get(MasterDataSyncService).run(market);
     } else if (step === 'financial') {
-      result = await app.get(FinancialSyncService).run(market, Number(value ?? 20));
+      result = await app
+        .get(FinancialSyncService)
+        .run(market, Number(value ?? 20), mode === 'reset');
     } else if (step === 'price') {
       const batchCode =
         market === 'XKRX' || market === 'XKOS' ? 'KR_EOD_PRICE_SYNC' : 'US_EOD_PRICE_SYNC';
       result = await app.get(MarketPriceSyncService).run(market, batchCode);
     } else {
-      throw new Error('usage: sync-data <master|financial|price> <KR|US|MIC> [limit]');
+      throw new Error('usage: sync-data <master|financial|price> <KR|US|MIC> [limit] [reset]');
     }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {

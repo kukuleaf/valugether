@@ -34,3 +34,15 @@ export class RefreshDto {
 export class LogoutDto {
   @IsString() refreshToken!: string;
 }
+
+export class EmailRequestDto {
+  @IsEmail() email!: string;
+}
+
+export class TokenConfirmDto {
+  @IsString() @MinLength(20) token!: string;
+}
+
+export class PasswordResetConfirmDto extends TokenConfirmDto {
+  @IsString() @MinLength(10) newPassword!: string;
+}

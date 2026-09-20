@@ -201,10 +201,17 @@ EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID=
 ```text
 SMTP_HOST=
 SMTP_PORT=
+SMTP_SECURE=
 SMTP_USER=
 SMTP_PASSWORD=
 MAIL_FROM=
+EMAIL_VERIFICATION_URL=rightstockvalue://auth/verify-email
+PASSWORD_RESET_URL=rightstockvalue://auth/reset-password
 ```
+
+이메일 인증과 비밀번호 재설정은 이메일/비밀번호(`user_password`) 계정에만 적용합니다.
+Google/Kakao/Naver 간편 로그인 계정은 소셜 provider의 검증 결과를 사용하므로 이 메일
+인증·재설정 흐름의 대상이 아닙니다.
 
 ## E. 오류 추적(선택)
 

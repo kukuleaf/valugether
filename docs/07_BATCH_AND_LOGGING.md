@@ -35,11 +35,37 @@ latest_metric_value Refresh
   - 하루 1~여러 번 증분 공시 확인
 - `SEC_FINANCIAL_SYNC`
   - nightly bulk 또는 증분
+  - 시장별 마지막 `company_id`를 `system_setting`의 `FINANCIAL_SYNC_CURSOR_KR/US`에 저장
+  - 회사 처리 직후 checkpoint를 갱신하므로 중단 후 같은 명령으로 이어서 실행
+  - 전체 순회 완료 시 cursor를 `0`으로 되돌림
+  - SEC Company Facts 404와 빈 응답은 `NO_DATA`로 집계하고 batch 오류와 분리
 
 ### 계산
 
 - `DERIVED_METRIC_RECALC`
   - 가격/재무 sync 성공 후 변경된 security만 계산
+
+현재 구현에서는 재무 sync가 재무·성장·수익성 지표를 계산하고, 가격 sync가 변경된
+종목의 `CLOSE_PRICE`, `PER`, `PBR`, `MARKET_CAP`, `DIVIDEND_YIELD`,
+`EARNINGS_YIELD`를 같은 transaction에서 `PRICE_V1`으로 갱신합니다. 별도 worker로
+분리하기 전에도 가격과 valuation 지표의 기준일이 일치해야 합니다.
+
+## BullMQ worker
+
+- `BATCH_WORKER_ENABLED=true`일 때 API 프로세스가 Redis queue와 단일 worker를 시작합니다.
+- `batch_definition`의 `is_enabled`, `schedule_cron`, `timezone_name`, `max_retry`를 Job Scheduler에 동기화합니다.
+- 지원 작업: `KR_EOD_PRICE_SYNC`, `US_EOD_PRICE_SYNC`, `DART_FINANCIAL_SYNC`, `SEC_FINANCIAL_SYNC`, `PRESET_MATCH_NOTIFY`
+- worker concurrency는 1이며 PostgreSQL advisory lock으로 같은 batch의 중복 실행을 한 번 더 막습니다.
+- 수동 enqueue는 batch code 단위 BullMQ deduplication을 사용합니다.
+- Redis가 시작 제한시간 안에 연결되지 않으면 API 시작을 실패시켜 worker 없는 상태의 오동작을 막습니다.
+- 실패는 `max_retry + 1`회까지 60초 기준 지수 backoff로 재시도하고 최종 오류 문맥을 `application_error_log`에 기록합니다.
+- 완료 job은 최대 24시간/500개, 실패 job은 최대 7일/1,000개 보관합니다.
+
+관리자 API:
+
+- `GET /api/admin/batches/queue`: queue count, scheduler, 정의 조회
+- `POST /api/admin/batches/queue/:batchCode`: 즉시 enqueue
+- `PATCH /api/admin/batches/schedules/:batchCode`: 활성화, cron, 재시도 횟수 변경
 
 ## 배치 단계
 

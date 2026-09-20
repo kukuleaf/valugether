@@ -25,6 +25,15 @@ v1 회원 필수정보:
 - DB에는 hash만
 - 비밀번호 로그 금지
 - 인증 실패 이유를 지나치게 구체적으로 노출하지 않음
+- 재설정 완료 시 기존 refresh token 전체 폐기
+
+## 이메일 인증과 재설정
+
+- 로컬 이메일 가입자는 인증 전 `PENDING_VERIFICATION` 상태이며 로그인을 차단
+- 인증·재설정 token 원문은 메일로만 전달하고 DB에는 SHA-256 hash만 저장
+- token은 목적별 만료시간, 1회 사용, 재전송 cooldown 적용
+- 메일 요청 API는 계정 존재 여부와 소셜 계정 여부를 같은 응답으로 숨김
+- 소셜 로그인 전용 계정은 이메일 인증·비밀번호 재설정 대상에서 제외
 
 ## 토큰
 
@@ -39,6 +48,7 @@ v1 회원 필수정보:
 - provider의 access token을 장기저장하지 않도록 설계
 - 필요한 최소 scope만 요청
 - 내부 user_id와 provider subject를 mapping
+- provider가 검증한 이메일은 로컬 이메일 인증을 다시 요구하지 않음
 
 ## API Key
 

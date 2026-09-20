@@ -14,6 +14,9 @@ export default function RootLayout() {
         <Stack.Screen name="presets/[id]" options={{ title: '맞춤기업 기준' }} />
         <Stack.Screen name="auth/login" options={{ title: '' }} />
         <Stack.Screen name="auth/register" options={{ title: '' }} />
+        <Stack.Screen name="auth/verify-email" options={{ title: '이메일 인증' }} />
+        <Stack.Screen name="auth/forgot-password" options={{ title: '비밀번호 재설정' }} />
+        <Stack.Screen name="auth/reset-password" options={{ title: '새 비밀번호 설정' }} />
       </Stack>
     </>
   );

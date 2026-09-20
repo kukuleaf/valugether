@@ -3,7 +3,6 @@ import { router } from 'expo-router';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, H1, Input, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { api } from '../../lib/api';
-import { saveTokens } from '../../lib/session';
 
 type Term = {
   term_id: number;
@@ -40,7 +39,7 @@ export default function Register() {
       return;
     }
     try {
-      const tokens = await api<any>('/auth/register', {
+      const result = await api<{ emailSent: boolean }>('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
           email,
@@ -51,9 +50,13 @@ export default function Register() {
           })),
         }),
       });
-      await saveTokens(tokens);
-      Alert.alert('가입 완료', '바른주식 밸류 가입이 완료되었습니다.');
-      router.replace('/settings');
+      Alert.alert(
+        '이메일 인증 필요',
+        result.emailSent
+          ? '인증 메일을 보냈습니다.'
+          : '가입은 완료됐지만 메일 발송에 실패했습니다. 잠시 후 재전송해 주세요.',
+      );
+      router.replace({ pathname: '/auth/verify-email', params: { email } });
     } catch (error: any) {
       Alert.alert('가입 실패', error.message);
     }

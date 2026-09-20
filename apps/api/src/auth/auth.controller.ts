@@ -1,6 +1,14 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, LogoutDto, RefreshDto, RegisterDto } from './auth.dto';
+import {
+  EmailRequestDto,
+  LoginDto,
+  LogoutDto,
+  PasswordResetConfirmDto,
+  RefreshDto,
+  RegisterDto,
+  TokenConfirmDto,
+} from './auth.dto';
 import { AccessTokenGuard } from './access-token.guard';
 
 @Controller('auth')
@@ -17,6 +25,18 @@ export class AuthController {
   }
   @Post('logout') logout(@Body() dto: LogoutDto) {
     return this.auth.logout(dto.refreshToken);
+  }
+  @Post('email-verification/request') requestEmailVerification(@Body() dto: EmailRequestDto) {
+    return this.auth.requestEmailVerification(dto.email);
+  }
+  @Post('email-verification/confirm') confirmEmailVerification(@Body() dto: TokenConfirmDto) {
+    return this.auth.confirmEmailVerification(dto.token);
+  }
+  @Post('password-reset/request') requestPasswordReset(@Body() dto: EmailRequestDto) {
+    return this.auth.requestPasswordReset(dto.email);
+  }
+  @Post('password-reset/confirm') confirmPasswordReset(@Body() dto: PasswordResetConfirmDto) {
+    return this.auth.confirmPasswordReset(dto.token, dto.newPassword);
   }
   @Get('me')
   @UseGuards(AccessTokenGuard)

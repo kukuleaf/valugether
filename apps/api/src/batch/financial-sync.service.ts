@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
+import { NoFinancialDataError } from '../providers/core/financial-data.provider';
 import { NormalizedFinancialFact } from '../providers/core/normalized-models';
 import { DartProvider } from '../providers/dart/dart.provider';
 import { SecProvider } from '../providers/sec/sec.provider';
@@ -13,40 +14,24 @@ export class FinancialSyncService {
     private readonly sec: SecProvider,
   ) {}
 
-  async run(market: string, requestedLimit = 20) {
+  async run(market: string, requestedLimit = 20, resetCursor = false, stopOnError = false) {
     const marketCode = market.toUpperCase();
     if (marketCode !== 'KR' && marketCode !== 'US') throw new Error('market must be KR or US');
     const limit = Math.max(1, Math.min(Number(requestedLimit) || 20, 200));
     const provider = marketCode === 'KR' ? this.dart : this.sec;
     const externalColumn = marketCode === 'KR' ? 'dart_corp_code' : 'sec_cik';
     const batchCode = marketCode === 'KR' ? 'DART_FINANCIAL_SYNC' : 'SEC_FINANCIAL_SYNC';
-    const companies = await this.db.query(
-      `select company_id,external_company_id,security_id from (
-         select distinct on (c.company_id)
-           c.company_id,c.${externalColumn} external_company_id,s.security_id,
-           case
-             when $1='KR' then array_position(
-               array['005930','196170','000660','247540','373220','086520','207940','028300',
-                     '005380','068760','000270','277810','068270','145020','105560','141080',
-                     '055550','403870','035420','000250','035720','006400','051910','028260',
-                     '012330','003670','066570','086790','032830','009150']::text[],s.ticker
-             )
-             else array_position(
-               array['NVDA','AAPL','GOOGL','GOOG','MSFT','AMZN','AVGO','META','TSLA','MU',
-                     'WMT','AMD','NFLX','COST','INTC','CSCO','PLTR','LRCX','AMAT','TXN',
-                     'QCOM','TMUS','PEP','ADBE','CRWD']::text[],s.ticker
-             )
-           end priority
-         from company c
-         join security s on s.company_id=c.company_id and s.is_active=true
-         join exchange e on e.exchange_id=s.exchange_id and e.market_code=$1
-         where c.is_active=true and c.${externalColumn} is not null
-         order by c.company_id,priority nulls last,s.security_id
-       ) candidates
-       order by priority nulls last,company_id
-       limit $2`,
-      [marketCode, limit],
-    );
+    const checkpointKey = `FINANCIAL_SYNC_CURSOR_${marketCode}`;
+    if (resetCursor) await this.saveCursor(checkpointKey, '0');
+    let cursorStart = await this.loadCursor(checkpointKey);
+    let companies = await this.loadCompanies(marketCode, externalColumn, cursorStart, limit);
+    let wrappedAtStart = false;
+    if (!companies.rowCount && cursorStart !== '0') {
+      cursorStart = '0';
+      wrappedAtStart = true;
+      await this.saveCursor(checkpointKey, cursorStart);
+      companies = await this.loadCompanies(marketCode, externalColumn, cursorStart, limit);
+    }
     const providerRow = await this.db.query(
       'select provider_id from data_provider where provider_code=$1',
       [provider.code],
@@ -60,49 +45,173 @@ export class FinancialSyncService {
     );
     const runId = run.rows[0].batch_run_id;
     let updated = 0;
+    let noData = 0;
+    let factsReceived = 0;
     let errors = 0;
     const failures: Array<{ externalCompanyId: string; error: string }> = [];
+    const noDataCompanies: Array<{ externalCompanyId: string; reason: string }> = [];
 
-    for (const company of companies.rows) {
-      try {
-        const facts = await provider.fetchCompanyFacts(company.external_company_id);
-        await this.persistCompanyFacts(
-          Number(company.company_id),
-          Number(company.security_id),
-          providerId,
-          facts,
-        );
-        updated++;
-      } catch (error: any) {
-        errors++;
-        failures.push({
-          externalCompanyId: company.external_company_id,
-          error: String(error?.message ?? error).slice(0, 300),
-        });
+    try {
+      for (const company of companies.rows) {
+        try {
+          const facts = await provider.fetchCompanyFacts(company.external_company_id);
+          if (!facts.length) {
+            noData++;
+            noDataCompanies.push({
+              externalCompanyId: company.external_company_id,
+              reason: 'EMPTY_RESPONSE',
+            });
+          } else {
+            await this.persistCompanyFacts(
+              Number(company.company_id),
+              Number(company.security_id),
+              providerId,
+              facts,
+            );
+            factsReceived += facts.length;
+            updated++;
+          }
+        } catch (error: any) {
+          if (error instanceof NoFinancialDataError) {
+            noData++;
+            noDataCompanies.push({
+              externalCompanyId: company.external_company_id,
+              reason: error.reason,
+            });
+          } else {
+            errors++;
+            failures.push({
+              externalCompanyId: company.external_company_id,
+              error: String(error?.message ?? error).slice(0, 300),
+            });
+            if (stopOnError) throw error;
+          }
+        }
+        await this.saveCursor(checkpointKey, String(company.company_id));
+        if (marketCode === 'US') await new Promise((resolve) => setTimeout(resolve, 120));
       }
-      if (marketCode === 'US') await new Promise((resolve) => setTimeout(resolve, 120));
+    } catch (error: any) {
+      await this.db.query(
+        `update batch_job_run set status_code='FAILED',ended_at=now(),updated_count=$2,
+           skipped_count=$3,error_count=$4,error_message=$5,
+           summary_json=$6::jsonb where batch_run_id=$1`,
+        [
+          runId,
+          updated,
+          noData,
+          Math.max(errors, 1),
+          String(error?.message ?? error).slice(0, 2000),
+          JSON.stringify({
+            market: marketCode,
+            provider: provider.code,
+            cursorStart,
+            updated,
+            noData,
+            factsReceived,
+            errors: Math.max(errors, 1),
+            noDataCompanies,
+            failures,
+          }),
+        ],
+      );
+      throw error;
     }
 
+    const cursorEnd = companies.rowCount
+      ? String(companies.rows[companies.rows.length - 1].company_id)
+      : cursorStart;
+    const hasMore = companies.rowCount
+      ? await this.hasMoreCompanies(marketCode, externalColumn, cursorEnd)
+      : false;
+    const nextCursor = hasMore ? cursorEnd : '0';
+    await this.saveCursor(checkpointKey, nextCursor);
+    const summary = {
+      market: marketCode,
+      provider: provider.code,
+      cursorStart,
+      cursorEnd,
+      nextCursor,
+      cycleCompleted: !hasMore,
+      wrappedAtStart,
+      requested: companies.rowCount,
+      updated,
+      noData,
+      factsReceived,
+      errors,
+      noDataCompanies,
+      failures,
+    };
+
     await this.db.query(
-      `update batch_job_run set status_code=$2,ended_at=now(),updated_count=$3,error_count=$4,
-         summary_json=$5::jsonb where batch_run_id=$1`,
+      `update batch_job_run set status_code=$2,ended_at=now(),updated_count=$3,
+         skipped_count=$4,error_count=$5,summary_json=$6::jsonb where batch_run_id=$1`,
       [
         runId,
         errors ? (updated ? 'PARTIAL_SUCCESS' : 'FAILED') : 'SUCCESS',
         updated,
+        noData,
         errors,
-        JSON.stringify({ market: marketCode, provider: provider.code, failures }),
+        JSON.stringify(summary),
       ],
     );
     return {
       runId,
-      market: marketCode,
-      provider: provider.code,
-      requested: companies.rowCount,
-      updated,
-      errors,
-      failures,
+      ...summary,
     };
+  }
+
+  private async loadCompanies(
+    marketCode: string,
+    externalColumn: 'dart_corp_code' | 'sec_cik',
+    cursor: string,
+    limit: number,
+  ) {
+    return this.db.query(
+      `select distinct on(c.company_id)
+         c.company_id,c.${externalColumn} external_company_id,s.security_id
+       from company c
+       join security s on s.company_id=c.company_id and s.is_active=true
+       join exchange e on e.exchange_id=s.exchange_id and e.market_code=$1
+       where c.is_active=true and c.${externalColumn} is not null and c.company_id>$2::bigint
+       order by c.company_id,s.security_id
+       limit $3`,
+      [marketCode, cursor, limit],
+    );
+  }
+
+  private async hasMoreCompanies(
+    marketCode: string,
+    externalColumn: 'dart_corp_code' | 'sec_cik',
+    cursor: string,
+  ) {
+    const result = await this.db.query(
+      `select 1
+       from company c
+       join security s on s.company_id=c.company_id and s.is_active=true
+       join exchange e on e.exchange_id=s.exchange_id and e.market_code=$1
+       where c.is_active=true and c.${externalColumn} is not null and c.company_id>$2::bigint
+       limit 1`,
+      [marketCode, cursor],
+    );
+    return Boolean(result.rowCount);
+  }
+
+  private async loadCursor(key: string) {
+    const result = await this.db.query(
+      'select setting_value from system_setting where setting_key=$1',
+      [key],
+    );
+    const value = String(result.rows[0]?.setting_value ?? '0');
+    return /^\d+$/.test(value) ? value : '0';
+  }
+
+  private async saveCursor(key: string, cursor: string) {
+    await this.db.query(
+      `insert into system_setting(setting_key,setting_value,value_type,description)
+       values($1,$2,'NUMBER','재무 동기화 재시작용 마지막 company_id')
+       on conflict(setting_key) do update set setting_value=excluded.setting_value,updated_at=now()`,
+      [key, cursor],
+    );
   }
 
   private async persistCompanyFacts(
@@ -210,11 +319,9 @@ export class FinancialSyncService {
       [securityId],
     );
     const price = priceRow.rowCount ? Number(priceRow.rows[0].close_price) : undefined;
-    const asOfDate = String(
-      priceRow.rows[0]?.trade_date ??
-        [...byMetric.values()].flat()[0]?.endDate ??
-        new Date().toISOString().slice(0, 10),
-    ).slice(0, 10);
+    const asOfDate = this.dateOnly(
+      priceRow.rows[0]?.trade_date ?? [...byMetric.values()].flat()[0]?.endDate ?? new Date(),
+    );
     const revenue = latest('REVENUE');
     const operatingIncome = latest('OPERATING_INCOME');
     const netIncome = latest('NET_INCOME');
@@ -288,5 +395,18 @@ export class FinancialSyncService {
       count++;
     }
     return count;
+  }
+
+  private dateOnly(value: unknown) {
+    if (value instanceof Date) {
+      const year = value.getFullYear();
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    const text = String(value);
+    const date = text.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+    if (!date) throw new Error(`invalid date value: ${text}`);
+    return date;
   }
 }

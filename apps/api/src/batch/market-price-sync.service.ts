@@ -83,6 +83,7 @@ export class MarketPriceSyncService {
               [securityId, p.tradeDate, providerId],
             );
             await this.upsert(client, securityId, providerId, p);
+            await this.refreshPriceMetrics(client, securityId, p.close, p.tradeDate);
             existed.rowCount ? updated++ : inserted++;
           } catch {
             errors++;
@@ -171,6 +172,45 @@ export class MarketPriceSyncService {
         p.volume,
         p.currency,
       ],
+    );
+  }
+
+  private async refreshPriceMetrics(
+    client: PoolClient,
+    securityId: number,
+    closePrice: number,
+    tradeDate: string,
+  ) {
+    await client.query(
+      `with base as (
+         select
+           max(l.numeric_value) filter(where m.metric_code='EPS_BASIC') eps,
+           max(l.numeric_value) filter(where m.metric_code='BPS') bps,
+           max(l.numeric_value) filter(where m.metric_code='WEIGHTED_AVG_SHARES') shares,
+           max(l.numeric_value) filter(where m.metric_code='DPS') dps
+         from latest_metric_value l
+         join financial_metric m on m.metric_id=l.metric_id
+         where l.security_id=$1
+       ), calculated(metric_code,numeric_value) as (
+         select 'CLOSE_PRICE'::text,$2::numeric
+         union all select 'PER',$2::numeric/nullif(eps,0) from base
+         union all select 'PBR',$2::numeric/nullif(bps,0) from base
+         union all select 'MARKET_CAP',$2::numeric*shares from base
+         union all select 'DIVIDEND_YIELD',dps/nullif($2::numeric,0)*100 from base
+         union all select 'EARNINGS_YIELD',eps/nullif($2::numeric,0)*100 from base
+       )
+       insert into latest_metric_value(
+         security_id,metric_id,numeric_value,as_of_date,source_type,calculation_version
+       )
+       select $1,m.metric_id,c.numeric_value,$3,'DERIVED','PRICE_V1'
+       from calculated c
+       join financial_metric m on m.metric_code=c.metric_code and m.is_active=true
+       where c.numeric_value is not null
+       on conflict(security_id,metric_id) do update set
+         numeric_value=excluded.numeric_value,as_of_date=excluded.as_of_date,
+         source_type=excluded.source_type,source_ref_id=null,
+         calculation_version=excluded.calculation_version,updated_at=now()`,
+      [securityId, closePrice, tradeDate],
     );
   }
 }

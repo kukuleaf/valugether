@@ -9,8 +9,35 @@ Content-Type: application/json
 
 {
   "email": "demo@example.com",
-  "password": "ChangeMe!1234"
+  "password": "ChangeMe!1234",
+  "consents": [
+    {"termId": 1, "agreed": true}
+  ]
 }
+
+### Email verification request
+POST {{baseUrl}}/auth/email-verification/request
+Content-Type: application/json
+
+{"email":"demo@example.com"}
+
+### Email verification confirm
+POST {{baseUrl}}/auth/email-verification/confirm
+Content-Type: application/json
+
+{"token":"TOKEN_FROM_EMAIL"}
+
+### Password reset request
+POST {{baseUrl}}/auth/password-reset/request
+Content-Type: application/json
+
+{"email":"demo@example.com"}
+
+### Password reset confirm
+POST {{baseUrl}}/auth/password-reset/confirm
+Content-Type: application/json
+
+{"token":"TOKEN_FROM_EMAIL", "newPassword":"NewPassword!1234"}
 
 ### Login
 POST {{baseUrl}}/auth/login
