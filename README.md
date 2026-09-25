@@ -8,15 +8,15 @@ MVP 프로젝트입니다. 미국 시장 구현은 포함하지만 운영 검증
 
 현재 저장소는 모바일 앱, API 서버, 관리자 웹, PostgreSQL DDL/기초데이터,
 외부 데이터 수집·정규화·검색·사용자 기능을 포함한 MVP 구현본입니다.
-정적 검사, production build, 기존 DB와 주요 외부 API 통합 검증을 통과했습니다.
+정적 검사, production build, PostgreSQL 17 신규 설치·복구, API/브라우저 E2E와 주요 외부 API 통합 검증을 통과했습니다.
 
 ## 현재 상태
 
-- 구현: 이메일 가입·인증·비밀번호 재설정, 일반·고급 검색, 종목 상세, 관심종목, 프리셋/알림함
+- 구현: 이메일 가입·인증·비밀번호 재설정·회원탈퇴, 일반·고급 검색, 검색 이력, 종목 상세, 관심종목, 프리셋/알림함·이메일 알림
 - 데이터: KIS/OpenDART/SEC master·재무·가격 수집과 파생지표 계산
-- 운영: 관리자 대시보드, 허용오차, provider/배치/로그, 약관, 순위 엑셀 export, BullMQ 자동 배치
-- 검증: typecheck/build, 근접검색 예제, PostgreSQL 구조, OpenDART/SEC/KIS 동기화, 핵심 사용자 API E2E 통과
-- 다음 작업: 신규 PostgreSQL 설치 검증, 이메일 인증/재설정, 데이터 품질 알림, 출시 보안
+- 운영: 관리자 대시보드, 허용오차, provider/배치/로그, 데이터 품질·운영 알림, 약관, 전략·공지, 순위 엑셀 export, BullMQ 자동 배치, request ID·전역 오류 로그, CORS allowlist·API rate limit
+- 검증: typecheck/build, PostgreSQL 17 신규 설치·백업 복구, API·배치·BullMQ·관리자·모바일 웹 자동 E2E, Expo Doctor 21/21, OpenDART/SEC/KIS 동기화 통과
+- 다음 작업: Android 실제 기기/EAS, 운영 도메인·소셜/광고 계정, 데이터 사용조건·법률 검토
 
 상세 현황은 `docs/11_TODO_TOBE.md`, 검증 결과는 `docs/21_VALIDATION.md`를 참고합니다.
 
@@ -83,7 +83,7 @@ docker compose up -d
 
 `00_create_database.sql`은 접속 DB 자체를 만드는 파일이므로 PostgreSQL 관리자 DB(`postgres`)에서 실행합니다.
 
-그 후 생성한 DB에 접속하여 `01`~`13`을 순서대로 실행합니다.
+그 후 생성한 DB에 접속하여 `01`~`15`를 순서대로 실행합니다.
 
 ```text
 database/sql/
@@ -101,6 +101,8 @@ database/sql/
   11_preset_notifications.sql
   12_global_alerts_exchanges.sql
   13_auth_tokens.sql
+  14_notification_email_delivery.sql
+  15_data_quality.sql
 ```
 
 로컬 샘플 계정(`09_seed_demo.sql` 적용 후):
@@ -110,10 +112,12 @@ database/sql/
 비밀번호: DemoPassword1!
 ```
 
-기존 개발 DB에 약관 구조만 추가할 때:
+기존 개발 DB에 증분 구조를 적용할 때 필요한 스크립트를 실행합니다. 현재 이메일 알림
+구조만 추가하려면 다음 명령을 사용합니다.
 
 ```bash
-npm run db:terms
+npm run db:notification-email
+npm run db:data-quality
 ```
 
 ## 실데이터 동기화
@@ -143,6 +147,28 @@ npm run sync-data -- financial KR 200
 
 KIS 접근 토큰은 발급 결과를 `.cache/kis-token.json`에 저장해 유효기간 동안 재사용합니다.
 유효 토큰이 이미 발급됐지만 캐시에 없다면 같은 날 가격 동기화를 다시 실행하지 않습니다.
+
+## 자동 API E2E
+
+로컬 `.env`의 PostgreSQL을 대상으로 임시 계정을 만들고 실제 HTTP 흐름을 검증한 뒤 관련
+계정·검색·프리셋·감사 기록을 자동 정리합니다. 운영 환경에서는 실행을 거부하며 기본적으로
+localhost DB만 허용합니다. 이메일 발송 API는 호출하지 않습니다.
+
+```bash
+npm run test:e2e
+```
+
+추가 자동 검증:
+
+```bash
+npm run test:batch       # 가격 upsert idempotency와 부분 실패 savepoint 복구
+npm run test:queue       # 임시 Redis에서 BullMQ worker와 실제 job 처리
+npm run test:ui:e2e      # 관리자와 모바일 웹 Playwright E2E
+npm run db:backup-check  # PostgreSQL 17 dump를 격리 DB에 복원하고 핵심 건수 비교
+```
+
+Playwright 최초 실행 전 Chromium이 없으면 `npx playwright install chromium`을 실행합니다.
+Docker 기반 검증은 임시 컨테이너와 dump를 성공·실패 여부와 무관하게 정리합니다.
 
 ## 문서
 

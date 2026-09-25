@@ -319,9 +319,77 @@ export class AuthService {
     return { ok: true };
   }
 
+  async deleteAccount(userId: string, password?: string) {
+    const client = await this.db.connect();
+    try {
+      await client.query('begin');
+      const account = await client.query(
+        `select u.user_id,p.password_hash,
+                exists(select 1 from user_social_account s where s.user_id=u.user_id) has_social
+         from app_user u
+         left join user_password p on p.user_id=u.user_id
+         where u.user_id=$1 and u.deleted_at is null
+         for update of u`,
+        [userId],
+      );
+      const row = account.rows[0];
+      if (!row) throw new UnauthorizedException('사용자 정보를 찾을 수 없습니다.');
+      if (!row.password_hash) {
+        if (row.has_social) {
+          throw new BadRequestException(
+            '간편 로그인 계정은 provider 재인증 기능 연결 후 탈퇴할 수 있습니다.',
+          );
+        }
+        throw new UnauthorizedException('유효한 인증수단을 찾을 수 없습니다.');
+      }
+      if (!password || !(await argon2.verify(row.password_hash, password))) {
+        throw new UnauthorizedException('현재 비밀번호를 확인하세요.');
+      }
+
+      const counts = (
+        await client.query(
+          `select
+             (select count(*)::int from watchlist_item i join watchlist w using(watchlist_id) where w.user_id=$1) watchlist_items,
+             (select count(*)::int from screen_preset where user_id=$1) presets,
+             (select count(*)::int from user_notification where user_id=$1) notifications,
+             (select count(*)::int from screen_search_log where user_id=$1) search_logs`,
+          [userId],
+        )
+      ).rows[0];
+
+      await client.query('delete from screen_search_log where user_id=$1', [userId]);
+      await client.query(`delete from application_error_log where context_json->>'userId'=$1`, [
+        userId,
+      ]);
+      await client.query(
+        `update audit_log set
+           target_id=case when target_type='USER' then null else target_id end,
+           before_json=null,after_json=null
+         where actor_user_id=$1::uuid or (target_type='USER' and target_id=$2::text)`,
+        [userId, userId],
+      );
+      await client.query(
+        `insert into audit_log(action_code,target_type,after_json)
+         values('AUTH_ACCOUNT_WITHDRAWN','ACCOUNT',$1::jsonb)`,
+        [JSON.stringify({ deleted: counts })],
+      );
+      await client.query('delete from app_user where user_id=$1', [userId]);
+      await client.query('commit');
+      return { ok: true, deleted: counts };
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async me(userId: string) {
     const result = await this.db.query(
       `select u.user_id,u.email,u.status_code,u.email_verified_at,u.last_login_at,u.created_at,
+              exists(select 1 from user_password pw where pw.user_id=u.user_id) has_password,
+              coalesce((select array_agg(sa.provider_code order by sa.provider_code)
+                        from user_social_account sa where sa.user_id=u.user_id),'{}') social_providers,
               (select count(*)::int from screen_preset p where p.user_id=u.user_id) preset_count,
               (select count(*)::int from watchlist_item i join watchlist w on w.watchlist_id=i.watchlist_id where w.user_id=u.user_id) watchlist_count
        from app_user u where u.user_id=$1 and u.deleted_at is null`,

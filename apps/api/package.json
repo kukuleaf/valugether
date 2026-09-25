@@ -7,6 +7,9 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "typecheck": "tsc --noEmit",
+    "test:e2e": "npm run build --silent && node --env-file=.env --test --test-concurrency=1 test/api.e2e.mjs",
+    "test:batch": "npm run build --silent && node --env-file=.env --test --test-concurrency=1 test/market-price.e2e.mjs",
+    "test:queue": "npm run build --silent && node ../../tools/run-queue-e2e.mjs",
     "create-admin": "tsx scripts/create-admin.ts",
     "sync-data": "npm run build --silent && node --env-file=.env dist/scripts/sync-data.js",
     "data-status": "npm run build --silent && node --env-file=.env dist/scripts/data-status.js"

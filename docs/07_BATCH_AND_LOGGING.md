@@ -54,11 +54,11 @@ latest_metric_value Refresh
 
 - `BATCH_WORKER_ENABLED=true`일 때 API 프로세스가 Redis queue와 단일 worker를 시작합니다.
 - `batch_definition`의 `is_enabled`, `schedule_cron`, `timezone_name`, `max_retry`를 Job Scheduler에 동기화합니다.
-- 지원 작업: `KR_EOD_PRICE_SYNC`, `US_EOD_PRICE_SYNC`, `DART_FINANCIAL_SYNC`, `SEC_FINANCIAL_SYNC`, `PRESET_MATCH_NOTIFY`
+- 지원 작업: `KR_EOD_PRICE_SYNC`, `US_EOD_PRICE_SYNC`, `DART_FINANCIAL_SYNC`, `SEC_FINANCIAL_SYNC`, `PRESET_MATCH_NOTIFY`, `DATA_QUALITY_CHECK`
 - worker concurrency는 1이며 PostgreSQL advisory lock으로 같은 batch의 중복 실행을 한 번 더 막습니다.
 - 수동 enqueue는 batch code 단위 BullMQ deduplication을 사용합니다.
 - Redis가 시작 제한시간 안에 연결되지 않으면 API 시작을 실패시켜 worker 없는 상태의 오동작을 막습니다.
-- 실패는 `max_retry + 1`회까지 60초 기준 지수 backoff로 재시도하고 최종 오류 문맥을 `application_error_log`에 기록합니다.
+- 실패는 `max_retry + 1`회까지 60초 기준 지수 backoff로 재시도하고 마지막 시도까지 실패한 경우에만 최종 오류 문맥을 `application_error_log`에 기록합니다.
 - 완료 job은 최대 24시간/500개, 실패 job은 최대 7일/1,000개 보관합니다.
 
 관리자 API:
@@ -66,6 +66,23 @@ latest_metric_value Refresh
 - `GET /api/admin/batches/queue`: queue count, scheduler, 정의 조회
 - `POST /api/admin/batches/queue/:batchCode`: 즉시 enqueue
 - `PATCH /api/admin/batches/schedules/:batchCode`: 활성화, cron, 재시도 횟수 변경
+- `GET /api/admin/batches/data-quality`: 최근 품질 검사와 이슈 조회
+- `POST /api/admin/batches/data-quality`: Redis 없이 즉시 품질 검사
+
+## 데이터 품질 검사
+
+`DATA_QUALITY_CHECK`는 다음을 검사하고 `data_quality_run`, `data_quality_issue`에 결과를
+남깁니다.
+
+- 거래소별 최신 가격 일수와 가격 보유 종목 비율
+- 시장별 최신 재무 일수와 재무 보유 종목 비율
+- 최신 가격의 0 이하 종가, 고가/저가 역전, 범위를 벗어난 종가, 음수 거래량
+- 제한시간을 넘긴 `RUNNING` 배치
+- 최근 `FAILED`, `PARTIAL_SUCCESS` 배치
+
+이슈가 있으면 선택적으로 운영 이메일을 보냅니다. 같은 이슈 조합은 기본 24시간 동안
+다시 보내지 않으며, 이메일 실패는 품질 검사 결과를 실패시키지 않고 별도 오류 로그로
+격리합니다.
 
 ## 배치 단계
 
@@ -153,6 +170,16 @@ errors=0
 - request_id
 - ip_hash
 - user_agent 축약
+
+### HTTP 요청 상관관계
+
+- 모든 API 요청에 UUID `x-request-id`를 부여하고 같은 응답 헤더로 반환
+- 클라이언이 정상 UUID를 보내면 재사용하고, 잘못된 값은 서버가 새로 생성
+- 접근 로그는 `event`, `requestId`, method, query string을 제외한 path, status, 처리 시간을 JSON으로 기록
+- request body, Authorization, token, API key는 접근 로그에 기록하지 않음
+- 검색 이력과 감사 로그에 현재 request ID를 자동 저장
+- 전역 예외 필터가 오류 응답에 request ID를 넣고, 500 오류는 `application_error_log`에 같은 ID로 저장
+- 예상하지 못한 500의 내부 메시지와 stack은 클라이언에 노출하지 않음
 
 ## 보관주기
 

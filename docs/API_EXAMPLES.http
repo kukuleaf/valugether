@@ -48,9 +48,17 @@ Content-Type: application/json
   "password": "ChangeMe!1234"
 }
 
+### Delete local account
+DELETE {{baseUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{"confirmation":"DELETE_MY_ACCOUNT", "password":"ChangeMe!1234"}
+
 ### Screening - exact + near
 POST {{baseUrl}}/screening/search
 Content-Type: application/json
+Authorization: Bearer {{accessToken}}
 
 {
   "marketCodes": ["US", "KR"],
@@ -61,8 +69,102 @@ Content-Type: application/json
   "limit": 50
 }
 
+### My search history
+GET {{baseUrl}}/screening/history?limit=30
+Authorization: Bearer {{accessToken}}
+
+### Next search history page
+GET {{baseUrl}}/screening/history?limit=30&beforeId=100
+Authorization: Bearer {{accessToken}}
+
+### Delete one search history item
+DELETE {{baseUrl}}/screening/history/100
+Authorization: Bearer {{accessToken}}
+
+### Delete all my search history
+DELETE {{baseUrl}}/screening/history
+Authorization: Bearer {{accessToken}}
+
+### Notification settings
+GET {{baseUrl}}/presets/notification-settings
+Authorization: Bearer {{accessToken}}
+
+### Enable in-app and email preset alerts
+PATCH {{baseUrl}}/presets/notification-settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{"enabled":true,"emailEnabled":true,"intervalDays":1}
+
+### Run due preset alerts (admin)
+POST {{baseUrl}}/admin/batches/preset-alerts
+Authorization: Bearer {{adminAccessToken}}
+
+### Latest data quality report (admin)
+GET {{baseUrl}}/admin/batches/data-quality?limit=10
+Authorization: Bearer {{adminAccessToken}}
+
+### Run data quality check now (admin)
+POST {{baseUrl}}/admin/batches/data-quality
+Authorization: Bearer {{adminAccessToken}}
+
 ### Strategies
 GET {{baseUrl}}/screening/strategies
+
+### Active notices
+GET {{baseUrl}}/notices
+
+### Admin strategies
+GET {{baseUrl}}/admin/strategies
+Authorization: Bearer {{adminAccessToken}}
+
+### Admin strategy metrics
+GET {{baseUrl}}/admin/strategy-metrics
+Authorization: Bearer {{adminAccessToken}}
+
+### Update an admin strategy
+PATCH {{baseUrl}}/admin/strategies/1
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "name": "저평가 기업",
+  "description": "가치보다 가격이 낮은 기업",
+  "isActive": true,
+  "displayOrder": 10,
+  "conditions": [
+    {"metricCode":"PER", "operator":"LTE", "target":15, "weight":1, "required":true},
+    {"metricCode":"PBR", "operator":"LTE", "target":1.5, "weight":1, "required":true}
+  ]
+}
+
+### Admin notices
+GET {{baseUrl}}/admin/notices
+Authorization: Bearer {{adminAccessToken}}
+
+### Create a draft notice
+POST {{baseUrl}}/admin/notices
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "title": "서비스 점검 안내",
+  "body": "점검 시간에는 일부 기능이 제한됩니다.",
+  "startsAt": "2026-09-20T00:00:00+09:00",
+  "endsAt": "2026-09-21T00:00:00+09:00"
+}
+
+### Publish a notice
+POST {{baseUrl}}/admin/notices/1/publish
+Authorization: Bearer {{adminAccessToken}}
+
+### Archive a notice
+POST {{baseUrl}}/admin/notices/1/archive
+Authorization: Bearer {{adminAccessToken}}
+
+### Delete a draft notice
+DELETE {{baseUrl}}/admin/notices/1
+Authorization: Bearer {{adminAccessToken}}
 
 ### Latest stocks
 GET {{baseUrl}}/stocks?marketCode=US&limit=20

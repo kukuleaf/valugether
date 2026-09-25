@@ -55,6 +55,7 @@ export class MarketPriceSyncService {
       try {
         await client.query('begin');
         for (const p of prices) {
+          await client.query('savepoint price_row');
           try {
             const map = await client.query(
               `select psm.security_id
@@ -76,6 +77,7 @@ export class MarketPriceSyncService {
             }
             if (!securityId) {
               skipped++;
+              await client.query('release savepoint price_row');
               continue;
             }
             const existed = await client.query(
@@ -85,7 +87,10 @@ export class MarketPriceSyncService {
             await this.upsert(client, securityId, providerId, p);
             await this.refreshPriceMetrics(client, securityId, p.close, p.tradeDate);
             existed.rowCount ? updated++ : inserted++;
+            await client.query('release savepoint price_row');
           } catch {
+            await client.query('rollback to savepoint price_row');
+            await client.query('release savepoint price_row');
             errors++;
           }
         }

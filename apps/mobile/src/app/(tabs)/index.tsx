@@ -5,9 +5,10 @@ import { ComponentProps, useEffect, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Page, palette } from '../../components/ui';
 import { defaultExchangeCodes, ExchangeSelector } from '../../components/ExchangeSelector';
+import { api } from '../../lib/api';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
-const strategies: Array<{
+type StrategyCardModel = {
   code: string;
   name: string;
   short: string;
@@ -15,7 +16,44 @@ const strategies: Array<{
   icon: IconName;
   background: string;
   iconColor: string;
-}> = [
+};
+type ApiStrategy = {
+  strategy_code: string;
+  strategy_name: string;
+  description: string | null;
+  display_order: number;
+  conditions: Array<{
+    metricCode: string;
+    metricName: string;
+    unitType: string;
+    operator: 'LTE' | 'LT' | 'GTE' | 'GT' | 'EQ' | 'BETWEEN';
+    target: number;
+    target2?: number;
+  }>;
+};
+type Notice = {
+  notice_id: number;
+  title: string;
+  body: string;
+  starts_at: string | null;
+  ends_at: string | null;
+};
+
+const strategyVisuals: Record<
+  string,
+  Pick<StrategyCardModel, 'icon' | 'background' | 'iconColor'>
+> = {
+  UNDERVALUED: { icon: 'pricetag-outline', background: '#E8F2FF', iconColor: '#246BCE' },
+  STABLE: { icon: 'shield-checkmark-outline', background: '#E4F7F1', iconColor: '#16876C' },
+  GROWTH: { icon: 'trending-up-outline', background: '#F0EBFF', iconColor: '#7251C7' },
+  DIVIDEND: { icon: 'cash-outline', background: '#FFF2D8', iconColor: '#A76A00' },
+};
+const defaultVisual = {
+  icon: 'analytics-outline' as IconName,
+  background: '#EDF2F7',
+  iconColor: '#4A6275',
+};
+const fallbackStrategies: StrategyCardModel[] = [
   {
     code: 'UNDERVALUED',
     name: '저평가 기업',
@@ -56,6 +94,8 @@ const strategies: Array<{
 
 export default function Home() {
   const [exchangeCodes, setExchangeCodes] = useState<string[]>(defaultExchangeCodes);
+  const [strategies, setStrategies] = useState<StrategyCardModel[]>(fallbackStrategies);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const hero = useRef(new Animated.Value(Platform.OS === 'web' ? 1 : 0)).current;
   useEffect(() => {
     Animated.timing(hero, {
@@ -64,6 +104,29 @@ export default function Home() {
       useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, [hero]);
+  useEffect(() => {
+    let active = true;
+    void api<ApiStrategy[]>('/screening/strategies')
+      .then((items) => {
+        if (!active) return;
+        setStrategies(
+          items.map((item) => ({
+            code: item.strategy_code,
+            name: item.strategy_name,
+            short: item.description ?? '',
+            conditions: item.conditions.map(formatCondition).join(' · '),
+            ...(strategyVisuals[item.strategy_code] ?? defaultVisual),
+          })),
+        );
+      })
+      .catch(() => undefined);
+    void api<Notice[]>('/notices')
+      .then((items) => active && setNotices(items))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent}>
@@ -93,6 +156,22 @@ export default function Home() {
         </Animated.View>
 
         <ExchangeSelector selected={exchangeCodes} onChange={setExchangeCodes} />
+
+        {notices.length > 0 && (
+          <View style={styles.announcements}>
+            {notices.map((notice) => (
+              <View style={styles.announcement} key={notice.notice_id}>
+                <View style={styles.announcementIcon}>
+                  <Ionicons name="megaphone-outline" size={18} color="#176B87" />
+                </View>
+                <View style={styles.announcementText}>
+                  <Text style={styles.announcementTitle}>{notice.title}</Text>
+                  <Text style={styles.announcementBody}>{notice.body}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.grid}>
           {strategies.map((strategy, index) => (
@@ -137,7 +216,7 @@ function StrategyCard({
   delay,
   exchangeCodes,
 }: {
-  strategy: (typeof strategies)[number];
+  strategy: StrategyCardModel;
   delay: number;
   exchangeCodes: string[];
 }) {
@@ -201,6 +280,22 @@ function StrategyCard({
   );
 }
 
+function formatCondition(condition: ApiStrategy['conditions'][number]) {
+  const signs = { LTE: '≤', LT: '<', GTE: '≥', GT: '>', EQ: '=', BETWEEN: '~' };
+  const unit =
+    condition.unitType === 'PERCENT'
+      ? '%'
+      : condition.unitType === 'RATIO'
+        ? '배'
+        : condition.unitType === 'BOOLEAN'
+          ? ''
+          : '';
+  if (condition.operator === 'BETWEEN') {
+    return `${condition.metricName} ${condition.target}${unit}~${condition.target2 ?? ''}${unit}`;
+  }
+  return `${condition.metricName} ${signs[condition.operator]} ${condition.target}${unit}`;
+}
+
 const styles = StyleSheet.create({
   screen: { backgroundColor: palette.bg },
   scrollContent: { paddingBottom: 30 },
@@ -261,6 +356,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   heroBadgeText: { color: '#D9FFF4', fontSize: 12, fontWeight: '700' },
+  announcements: { width: '100%', gap: 8 },
+  announcement: {
+    flexDirection: 'row',
+    gap: 10,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#CFE2E8',
+    backgroundColor: '#F2FAFC',
+  },
+  announcementIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DDEFF3',
+  },
+  announcementText: { flex: 1 },
+  announcementTitle: { color: palette.text, fontSize: 14, fontWeight: '900' },
+  announcementBody: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 3 },
   grid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   strategyWrap: { width: '48%', flexGrow: 1 },
   strategyCard: {

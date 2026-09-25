@@ -13,11 +13,14 @@ import { WatchlistsModule } from './watchlists/watchlists.module';
 import { PresetsModule } from './presets/presets.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { TermsModule } from './terms/terms.module';
+import { NoticesModule } from './notices/notices.module';
+import { HttpObservabilityModule } from './common/http/http-observability.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DatabaseModule,
+    HttpObservabilityModule,
     AuditModule,
     ProvidersModule,
     AuthModule,
@@ -30,6 +33,7 @@ import { TermsModule } from './terms/terms.module';
     PresetsModule,
     MetricsModule,
     TermsModule,
+    NoticesModule,
   ],
 })
 export class AppModule {}

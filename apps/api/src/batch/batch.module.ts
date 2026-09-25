@@ -7,6 +7,7 @@ import { PresetsModule } from '../presets/presets.module';
 import { MasterDataSyncService } from './master-data-sync.service';
 import { FinancialSyncService } from './financial-sync.service';
 import { BatchQueueService } from './batch-queue.service';
+import { DataQualityService } from './data-quality.service';
 @Module({
   imports: [AuthModule, ProvidersModule, PresetsModule],
   providers: [
@@ -14,8 +15,9 @@ import { BatchQueueService } from './batch-queue.service';
     MasterDataSyncService,
     FinancialSyncService,
     BatchQueueService,
+    DataQualityService,
   ],
   controllers: [BatchController],
-  exports: [MarketPriceSyncService, BatchQueueService],
+  exports: [MarketPriceSyncService, BatchQueueService, DataQualityService],
 })
 export class BatchModule {}

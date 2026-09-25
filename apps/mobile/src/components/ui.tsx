@@ -48,10 +48,12 @@ export function Button({
   title,
   onPress,
   secondary = false,
+  danger = false,
 }: {
   title: string;
   onPress: () => void;
   secondary?: boolean;
+  danger?: boolean;
 }) {
   return (
     <Pressable
@@ -60,10 +62,19 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         secondary && styles.buttonSecondary,
+        danger && styles.buttonDanger,
         pressed && styles.buttonPressed,
       ]}
     >
-      <Text style={[styles.buttonText, secondary && { color: palette.text }]}>{title}</Text>
+      <Text
+        style={[
+          styles.buttonText,
+          secondary && { color: palette.text },
+          danger && styles.buttonDangerText,
+        ]}
+      >
+        {title}
+      </Text>
     </Pressable>
   );
 }
@@ -160,6 +171,8 @@ const styles = StyleSheet.create({
     }),
   },
   buttonSecondary: { backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.line },
+  buttonDanger: { backgroundColor: '#FFF5F5', borderWidth: 1, borderColor: '#D94C4C' },
+  buttonDangerText: { color: '#B42318' },
   buttonPressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
   buttonText: { color: 'white', fontWeight: '700', fontSize: 15 },
   input: {

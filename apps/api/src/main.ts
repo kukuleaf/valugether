@@ -1,16 +1,10 @@
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { configureHttp } from './common/http/configure-http';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.use(helmet());
-  app.setGlobalPrefix('api');
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
-  );
-  app.enableCors({ origin: true, credentials: true }); // TODO production: explicit allowed origins
+  configureHttp(app);
   await app.listen(Number(process.env.PORT ?? 3000));
 }
 bootstrap();

@@ -4,7 +4,9 @@ import {
   IsArray,
   IsBoolean,
   IsEmail,
+  Equals,
   IsInt,
+  IsOptional,
   IsString,
   MinLength,
   ValidateNested,
@@ -45,4 +47,9 @@ export class TokenConfirmDto {
 
 export class PasswordResetConfirmDto extends TokenConfirmDto {
   @IsString() @MinLength(10) newPassword!: string;
+}
+
+export class DeleteAccountDto {
+  @Equals('DELETE_MY_ACCOUNT') confirmation!: string;
+  @IsOptional() @IsString() password?: string;
 }

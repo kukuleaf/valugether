@@ -7,24 +7,25 @@
 - [ ] Market Data 공급자에게 외부 display / DB 저장 / 파생지표 표시 사용형태 서면확인
 - [ ] 가격 기준일 UI 표시
 - [ ] 데이터 오류/지연 fallback
+- [-] 데이터 품질 검사·운영메일 구현 완료. 운영 임계치 확정과 수신자/스케줄 활성화 필요
 - [ ] 종목/공시 mapping 품질 샘플검수
 
 ## 보안
 
 - [ ] 운영 Secret Manager
-- [ ] CORS allowlist
+- [x] CORS allowlist 코드·검증 완료. 운영 도메인 확정 후 환경변수 입력 필요
 - [ ] Admin MFA 검토
-- [ ] Auth rate limit
-- [ ] Refresh rotation/탈취대응
-- [ ] 의존성 취약점 검사
-- [ ] 관리자 API penetration/basic security test
-- [ ] backup encryption/restore test
+- [x] Auth/search memory·Redis rate limit과 Redis 장애 fallback
+- [x] Refresh token rotation·폐기·재사용 차단 E2E
+- [-] 의존성 audit 완료, high/critical 0. upstream Expo/ExcelJS moderate 추적 필요
+- [-] 관리자 보호 경로, 권한, same-origin mutation, CSP/보안 헤더 자동 검사 완료. 외부 penetration test 필요
+- [-] 로컬 PostgreSQL 17 자동 backup/restore 검증 완료. 운영 backup 암호화·보관·정기 훈련 필요
 
 ## 개인정보
 
 - [ ] 개인정보처리방침
 - [ ] 이용약관
-- [ ] 탈퇴/삭제 처리
+- [-] 로컬 탈퇴/삭제 구현 완료. 소셜 provider 재인증과 법정 보존기간 확정 필요
 - [ ] 광고 SDK 동의/스토어 고지
 - [ ] 로그 보관기간 확정
 - [ ] 개인정보 수집항목 실제 코드와 문서 일치

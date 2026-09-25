@@ -45,7 +45,8 @@ INSERT INTO batch_definition(batch_code,batch_name,schedule_cron,timezone_name,i
 ('DART_FINANCIAL_SYNC','DART 재무 동기화','0 3 * * *','Asia/Seoul',false,'증분 공시 수집'),
 ('SEC_FINANCIAL_SYNC','SEC 재무 동기화','30 17 * * *','Asia/Seoul',false,'nightly bulk 또는 증분'),
 ('DERIVED_METRIC_RECALC','파생지표 재계산','0 10 * * *','Asia/Seoul',false,'변경된 종목만 계산'),
-('PRESET_MATCH_NOTIFY','맞춤기업 조건 충족 알림','30 10 * * *','Asia/Seoul',false,'가격 및 파생지표 갱신 뒤 알림 주기가 도래한 프리셋을 평가')
+('PRESET_MATCH_NOTIFY','맞춤기업 조건 충족 알림','30 10 * * *','Asia/Seoul',false,'가격 및 파생지표 갱신 뒤 알림 주기가 도래한 프리셋을 평가'),
+('DATA_QUALITY_CHECK','데이터 품질 검사','0 11 * * *','Asia/Seoul',false,'가격·재무 최신성, 커버리지, 이상값, 배치 실패 검사')
 ON CONFLICT (batch_code) DO UPDATE SET
   batch_name=EXCLUDED.batch_name,
   schedule_cron=EXCLUDED.schedule_cron,

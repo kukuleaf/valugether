@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -15,20 +16,31 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
+  MaxLength,
   Min,
+  MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { AuditService } from '../audit/audit.service';
 import { RankingExportService } from './ranking-export.service';
+import { AdminStrategiesService } from './admin-strategies.service';
+import { AdminNoticesService } from './admin-notices.service';
 
 type DownloadResponse = {
   set(headers: Record<string, string>): void;
@@ -51,6 +63,33 @@ class UpdateTermDto {
   @IsOptional() @IsBoolean() isRequired?: boolean;
   @IsOptional() @IsDateString() effectiveFrom?: string;
 }
+class StrategyConditionDto {
+  @IsString() metricCode!: string;
+  @IsIn(['LTE', 'LT', 'GTE', 'GT', 'EQ', 'BETWEEN'])
+  operator!: 'LTE' | 'LT' | 'GTE' | 'GT' | 'EQ' | 'BETWEEN';
+  @IsNumber() target!: number;
+  @IsOptional() @IsNumber() target2?: number;
+  @IsNumber() @Min(0.01) @Max(100) weight!: number;
+  @IsBoolean() required!: boolean;
+}
+class UpdateStrategyDto {
+  @IsString() @MinLength(1) @MaxLength(120) name!: string;
+  @IsString() @MaxLength(2000) description!: string;
+  @IsBoolean() isActive!: boolean;
+  @IsInt() @Min(0) @Max(1000) displayOrder!: number;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(40)
+  @ValidateNested({ each: true })
+  @Type(() => StrategyConditionDto)
+  conditions!: StrategyConditionDto[];
+}
+class NoticeDto {
+  @IsString() @MinLength(1) @MaxLength(250) title!: string;
+  @IsString() @MinLength(1) @MaxLength(10000) body!: string;
+  @IsOptional() @IsDateString() startsAt?: string | null;
+  @IsOptional() @IsDateString() endsAt?: string | null;
+}
 @Controller('admin')
 @UseGuards(AccessTokenGuard, AdminGuard)
 export class AdminController {
@@ -58,7 +97,59 @@ export class AdminController {
     @Inject(DB_POOL) private readonly db: Pool,
     private readonly audit: AuditService,
     private readonly rankingExport: RankingExportService,
+    private readonly strategiesService: AdminStrategiesService,
+    private readonly noticesService: AdminNoticesService,
   ) {}
+
+  @Get('strategies') strategies() {
+    return this.strategiesService.list();
+  }
+
+  @Get('strategy-metrics') strategyMetrics() {
+    return this.strategiesService.metrics();
+  }
+
+  @Patch('strategies/:id') updateStrategy(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateStrategyDto,
+  ) {
+    return this.strategiesService.update(req.user.sub, id, dto);
+  }
+
+  @Get('notices') notices() {
+    return this.noticesService.list();
+  }
+
+  @Post('notices') createNotice(@Req() req: any, @Body() dto: NoticeDto) {
+    return this.noticesService.create(req.user.sub, dto);
+  }
+
+  @Patch('notices/:id') updateNotice(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: NoticeDto,
+  ) {
+    return this.noticesService.update(req.user.sub, id, dto);
+  }
+
+  @Post('notices/:id/publish') publishNotice(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.noticesService.publish(req.user.sub, id);
+  }
+
+  @Post('notices/:id/archive') archiveNotice(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.noticesService.archive(req.user.sub, id);
+  }
+
+  @Delete('notices/:id') removeNotice(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+    return this.noticesService.remove(req.user.sub, id);
+  }
 
   @Get('rankings/export')
   async exportRankings(

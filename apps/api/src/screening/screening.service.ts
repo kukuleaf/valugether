@@ -1,6 +1,7 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
+import { RequestContextService } from '../common/http/request-context.service';
 import { ScreenConditionDto, ScreenSearchDto } from './screening.dto';
 
 type Tolerance = { type: 'PERCENT' | 'ABSOLUTE'; value: number };
@@ -8,16 +9,39 @@ type Eval = { status: 'EXACT' | 'NEAR' | 'FAIL'; score: number };
 
 @Injectable()
 export class ScreeningService {
-  constructor(@Inject(DB_POOL) private readonly db: Pool) {}
+  constructor(
+    @Inject(DB_POOL) private readonly db: Pool,
+    @Optional() private readonly context?: RequestContextService,
+  ) {}
 
   async strategies() {
     const r = await this.db.query(
-      `select strategy_code,strategy_name,description,display_order from screen_strategy where is_active=true order by display_order`,
+      `select s.strategy_code,s.strategy_name,s.description,s.display_order,
+              coalesce(json_agg(json_build_object(
+                'metricCode',m.metric_code,'metricName',m.metric_name_ko,
+                'unitType',m.unit_type,'operator',c.operator_code,
+                'target',c.target_value,'target2',c.target_value2,
+                'weight',c.weight,'required',c.required
+              ) order by c.display_order) filter (where c.strategy_condition_id is not null),'[]') conditions
+       from screen_strategy s
+       left join screen_strategy_condition c on c.strategy_id=s.strategy_id
+       left join financial_metric m on m.metric_id=c.metric_id
+       where s.is_active=true
+       group by s.strategy_id
+       order by s.display_order,s.strategy_id`,
     );
-    return r.rows;
+    return r.rows.map((row) => ({
+      ...row,
+      conditions: row.conditions.map((condition: any) => ({
+        ...condition,
+        target: Number(condition.target),
+        target2: condition.target2 == null ? undefined : Number(condition.target2),
+        weight: Number(condition.weight),
+      })),
+    }));
   }
 
-  async search(dto: ScreenSearchDto, userId?: string) {
+  async search(dto: ScreenSearchDto, userId?: string, recordHistory = true) {
     const started = Date.now();
     let conditions = dto.conditions ?? [];
     if (dto.strategyCode) {
@@ -69,16 +93,36 @@ export class ScreeningService {
         weights = 0;
       const details = [];
       for (const c of conditions) {
+        const m = meta.get(c.metricCode)!;
         const actual = s.values[c.metricCode]?.value;
         if (actual == null) {
-          failed = true;
-          break;
+          if (c.required !== false) {
+            failed = true;
+            break;
+          }
+          allExact = false;
+          weights += c.weight ?? 1;
+          details.push({
+            metricCode: c.metricCode,
+            metricName: m.name,
+            unitType: m.unitType,
+            actual: null,
+            target: c.target,
+            target2: c.target2,
+            operator: c.operator,
+            status: 'FAIL',
+            score: 0,
+            tolerance: m.tolerance,
+          });
+          continue;
         }
-        const m = meta.get(c.metricCode)!;
         const ev = this.evaluate(actual, c, m.tolerance);
         if (ev.status === 'FAIL') {
-          failed = true;
-          break;
+          if (c.required !== false) {
+            failed = true;
+            break;
+          }
+          allExact = false;
         }
         if (ev.status === 'NEAR') allExact = false;
         const w = c.weight ?? 1;
@@ -118,25 +162,73 @@ export class ScreeningService {
     const nearCount = results.length - exactCount;
     const limited = results.slice(0, dto.limit ?? 50);
     const elapsed = Date.now() - started;
-    await this.db.query(
-      `insert into screen_search_log(user_id,search_mode,strategy_code,request_json,exact_count,near_count,elapsed_ms)
-       values($1,$2,$3,$4::jsonb,$5,$6,$7)`,
-      [
-        userId ?? null,
-        dto.strategyCode ? 'GENERAL' : 'ADVANCED',
-        dto.strategyCode ?? null,
-        JSON.stringify(dto),
-        exactCount,
-        nearCount,
-        elapsed,
-      ],
-    );
+    if (recordHistory) {
+      await this.db.query(
+        `insert into screen_search_log(user_id,search_mode,strategy_code,request_json,exact_count,near_count,elapsed_ms,request_id)
+         values($1,$2,$3,$4::jsonb,$5,$6,$7,$8)`,
+        [
+          userId ?? null,
+          dto.strategyCode ? 'GENERAL' : 'ADVANCED',
+          dto.strategyCode ?? null,
+          JSON.stringify(dto),
+          exactCount,
+          nearCount,
+          elapsed,
+          this.context?.requestId() ?? null,
+        ],
+      );
+    }
     return { exactCount, nearCount, elapsedMs: elapsed, results: limited };
+  }
+
+  async history(userId: string, beforeId?: number, requestedLimit?: number) {
+    const limit = requestedLimit ?? 30;
+    const result = await this.db.query(
+      `select l.search_log_id,l.search_mode,l.strategy_code,s.strategy_name,
+              l.request_json,l.exact_count,l.near_count,l.elapsed_ms,l.created_at
+       from screen_search_log l
+       left join screen_strategy s on s.strategy_code=l.strategy_code
+       where l.user_id=$1 and ($2::bigint is null or l.search_log_id<$2)
+       order by l.search_log_id desc
+       limit $3`,
+      [userId, beforeId ?? null, limit + 1],
+    );
+    const hasMore = result.rows.length > limit;
+    const page = result.rows.slice(0, limit);
+    const items = page.map((row) => ({
+      id: Number(row.search_log_id),
+      searchMode: row.search_mode,
+      strategyCode: row.strategy_code,
+      strategyName: row.strategy_name,
+      request: row.request_json,
+      exactCount: row.exact_count,
+      nearCount: row.near_count,
+      elapsedMs: row.elapsed_ms,
+      createdAt: row.created_at,
+    }));
+    return {
+      items,
+      hasMore,
+      nextCursor: hasMore && items.length ? items[items.length - 1].id : null,
+    };
+  }
+
+  async deleteHistory(userId: string, id: number) {
+    const result = await this.db.query(
+      'delete from screen_search_log where search_log_id=$1 and user_id=$2 returning search_log_id',
+      [id, userId],
+    );
+    return { deleted: Boolean(result.rowCount) };
+  }
+
+  async clearHistory(userId: string) {
+    const result = await this.db.query('delete from screen_search_log where user_id=$1', [userId]);
+    return { deletedCount: result.rowCount ?? 0 };
   }
 
   private async loadStrategy(code: string): Promise<ScreenConditionDto[]> {
     const r = await this.db.query(
-      `select m.metric_code,c.operator_code,c.target_value,c.target_value2,c.weight
+      `select m.metric_code,c.operator_code,c.target_value,c.target_value2,c.weight,c.required
        from screen_strategy s join screen_strategy_condition c on c.strategy_id=s.strategy_id
        join financial_metric m on m.metric_id=c.metric_id
        where s.strategy_code=$1 and s.is_active=true order by c.display_order`,
@@ -149,6 +241,7 @@ export class ScreeningService {
       target: Number(x.target_value),
       target2: x.target_value2 == null ? undefined : Number(x.target_value2),
       weight: Number(x.weight),
+      required: x.required,
     }));
   }
 

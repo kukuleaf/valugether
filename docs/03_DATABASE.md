@@ -88,6 +88,8 @@
 - batch_step_run
 - external_api_call_log
 - data_ingestion_log
+- data_quality_run
+- data_quality_issue
 - audit_log
 - application_error_log
 - notice

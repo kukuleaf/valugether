@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
+import { clearAdminCookies, rejectCrossOrigin } from '../../../../lib/request-security';
 
 async function callNest(req: NextRequest, path: string[], token: string) {
   const base = process.env.ADMIN_API_BASE_URL ?? 'http://localhost:3000/api';
@@ -13,6 +14,10 @@ async function callNest(req: NextRequest, path: string[], token: string) {
 }
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  if (!['GET', 'HEAD'].includes(req.method)) {
+    const rejected = rejectCrossOrigin(req);
+    if (rejected) return rejected;
+  }
   const { path } = await ctx.params;
   const jar = await cookies();
   let access = jar.get('admin_access')?.value;
@@ -37,7 +42,13 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   }
   if (!upstream) return NextResponse.json({ message: 'unauthorized' }, { status: 401 });
   const headers = new Headers();
-  for (const name of ['content-type', 'content-disposition', 'cache-control']) {
+  for (const name of [
+    'content-type',
+    'content-disposition',
+    'cache-control',
+    'x-request-id',
+    'retry-after',
+  ]) {
     const value = upstream.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -61,6 +72,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
       maxAge: 30 * 86400,
     });
   }
+  if (upstream.status === 401) clearAdminCookies(res);
   return res;
 }
 export const GET = proxy;

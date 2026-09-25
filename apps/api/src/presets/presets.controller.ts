@@ -27,6 +27,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Pool } from 'pg';
+import { ConfigService } from '@nestjs/config';
 import { DB_POOL } from '../common/database/database.module';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AuditService } from '../audit/audit.service';
@@ -51,6 +52,7 @@ class SavePresetDto {
 }
 class NotificationSettingsDto {
   @IsBoolean() enabled!: boolean;
+  @IsOptional() @IsBoolean() emailEnabled?: boolean;
   @IsInt() @Min(1) @Max(30) intervalDays!: number;
 }
 
@@ -60,6 +62,7 @@ export class PresetsController {
   constructor(
     @Inject(DB_POOL) private readonly db: Pool,
     private readonly audit: AuditService,
+    private readonly config: ConfigService,
   ) {}
 
   @Get() async list(@Req() req: any) {
@@ -71,21 +74,22 @@ export class PresetsController {
       `insert into user_notification_setting(user_id)
        values($1)
        on conflict(user_id) do update set user_id=excluded.user_id
-       returning custom_company_enabled,notification_interval_days,
+       returning custom_company_enabled,email_enabled,notification_interval_days,
                  next_notification_at,last_notification_at`,
       [req.user.sub],
     );
-    return result.rows[0];
+    return this.notificationSettingsResponse(result.rows[0]);
   }
 
   @Patch('notification-settings')
   async updateNotificationSettings(@Req() req: any, @Body() dto: NotificationSettingsDto) {
     const result = await this.db.query(
       `insert into user_notification_setting(
-         user_id,custom_company_enabled,notification_interval_days,next_notification_at
-       ) values($1,$2,$3,case when $2 then now() else null end)
+         user_id,custom_company_enabled,email_enabled,notification_interval_days,next_notification_at
+       ) values($1,$2,coalesce($4::boolean,false),$3,case when $2 then now() else null end)
        on conflict(user_id) do update
        set custom_company_enabled=excluded.custom_company_enabled,
+           email_enabled=coalesce($4::boolean,user_notification_setting.email_enabled),
            notification_interval_days=excluded.notification_interval_days,
            next_notification_at=case
              when excluded.custom_company_enabled=false then null
@@ -93,11 +97,11 @@ export class PresetsController {
              else user_notification_setting.next_notification_at
            end,
            updated_at=now()
-       returning custom_company_enabled,notification_interval_days,
+       returning custom_company_enabled,email_enabled,notification_interval_days,
                  next_notification_at,last_notification_at`,
-      [req.user.sub, dto.enabled, dto.intervalDays],
+      [req.user.sub, dto.enabled, dto.intervalDays, dto.emailEnabled ?? null],
     );
-    return result.rows[0];
+    return this.notificationSettingsResponse(result.rows[0]);
   }
 
   @Get('notifications/inbox')
@@ -171,7 +175,8 @@ export class PresetsController {
         ? await client.query(
             `update screen_preset
              set preset_name=$2,description=$3,market_filter_json=$4::jsonb,
-                 exchange_filter_json=$5::jsonb,search_mode=$6,updated_at=now()
+                 exchange_filter_json=$5::jsonb,search_mode=$6,
+                 last_match_security_ids='[]'::jsonb,last_notification_at=null,updated_at=now()
              where preset_id=$7 and user_id=$1
              returning preset_id`,
             [...values, presetId],
@@ -185,6 +190,8 @@ export class PresetsController {
                  market_filter_json=excluded.market_filter_json,
                  exchange_filter_json=excluded.exchange_filter_json,
                  search_mode=excluded.search_mode,
+                 last_match_security_ids='[]'::jsonb,
+                 last_notification_at=null,
                  updated_at=now()
              returning preset_id`,
             values,
@@ -237,5 +244,12 @@ export class PresetsController {
       after: { action: 'DELETE' },
     });
     return { ok: true };
+  }
+
+  private notificationSettingsResponse(row: any) {
+    return {
+      ...row,
+      email_available: this.config.get<string>('PRESET_ALERT_EMAIL_ENABLED') === 'true',
+    };
   }
 }

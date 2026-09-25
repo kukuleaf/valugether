@@ -1,10 +1,14 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
+import { RequestContextService } from '../common/http/request-context.service';
 
 @Injectable()
 export class AuditService {
-  constructor(@Inject(DB_POOL) private readonly db: Pool) {}
+  constructor(
+    @Inject(DB_POOL) private readonly db: Pool,
+    @Optional() private readonly context?: RequestContextService,
+  ) {}
 
   async write(input: {
     actorUserId?: string | null;
@@ -25,7 +29,7 @@ export class AuditService {
         input.targetId ?? null,
         input.before ? JSON.stringify(input.before) : null,
         input.after ? JSON.stringify(input.after) : null,
-        input.requestId ?? null,
+        input.requestId ?? this.context?.requestId() ?? null,
       ],
     );
   }

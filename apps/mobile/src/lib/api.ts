@@ -94,5 +94,6 @@ export async function runScreening(body: {
   return api<{ exactCount: number; nearCount: number; elapsedMs: number; results: ScreenResult[] }>(
     '/screening/search',
     { method: 'POST', body: JSON.stringify(body) },
+    true,
   );
 }

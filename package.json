@@ -13,14 +13,26 @@
     "admin": "npm --workspace apps/admin run dev -- -p 3100",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm --workspace apps/api run build && npm --workspace apps/admin run build",
+    "test:e2e": "npm --workspace apps/api run test:e2e",
+    "test:batch": "npm --workspace apps/api run test:batch",
+    "test:queue": "npm --workspace apps/api run test:queue",
+    "test:ui:e2e": "npm --workspace apps/api run build --silent && npm --workspace apps/admin run build --silent && npm --workspace apps/mobile run export:web:e2e --silent && node tools/run-ui-e2e.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:terms": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/10_terms_versioning.sql",
     "db:preset-notifications": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/11_preset_notifications.sql",
     "db:global-alerts-exchanges": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/12_global_alerts_exchanges.sql",
-    "db:auth-tokens": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/13_auth_tokens.sql"
+    "db:auth-tokens": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/13_auth_tokens.sql",
+    "db:notification-email": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/14_notification_email_delivery.sql",
+    "db:data-quality": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/15_data_quality.sql",
+    "db:backup-check": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-db-backup-restore.ps1"
   },
   "devDependencies": {
+    "@nestjs/platform-express": "11.2.3",
+    "@playwright/test": "^1.63.0",
     "prettier": "^3.6.2"
+  },
+  "overrides": {
+    "multer": "2.3.0"
   }
 }

@@ -10,6 +10,6 @@ import { MailService } from '../common/mail/mail.service';
   imports: [JwtModule.register({})],
   controllers: [AuthController],
   providers: [AuthService, AccessTokenGuard, OptionalAccessTokenGuard, AdminGuard, MailService],
-  exports: [JwtModule, AccessTokenGuard, OptionalAccessTokenGuard, AdminGuard],
+  exports: [JwtModule, AccessTokenGuard, OptionalAccessTokenGuard, AdminGuard, MailService],
 })
 export class AuthModule {}

@@ -1,7 +1,9 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -17,6 +19,7 @@ export class ScreenConditionDto {
   @IsNumber() target!: number;
   @IsOptional() @IsNumber() target2?: number;
   @IsOptional() @IsNumber() @Min(0.01) weight?: number;
+  @IsOptional() @IsBoolean() required?: boolean;
 }
 export class ScreenSearchDto {
   @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) marketCodes?: string[];
@@ -29,4 +32,9 @@ export class ScreenSearchDto {
   @Type(() => ScreenConditionDto)
   conditions?: ScreenConditionDto[];
   @IsOptional() @IsNumber() @Min(1) @Max(200) limit?: number;
+}
+
+export class SearchHistoryQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) beforeId?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number;
 }

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rejectCrossOrigin } from '../../../../lib/request-security';
 export async function POST(req: NextRequest) {
+  const rejected = rejectCrossOrigin(req);
+  if (rejected) return rejected;
   const body = await req.text();
   const base = process.env.ADMIN_API_BASE_URL ?? 'http://localhost:3000/api';
   const login = await fetch(`${base}/auth/login`, {

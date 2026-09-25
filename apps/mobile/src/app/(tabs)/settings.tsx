@@ -11,6 +11,8 @@ type Profile = {
   email_verified_at: string | null;
   last_login_at: string | null;
   created_at: string;
+  has_password: boolean;
+  social_providers: string[];
   preset_count: number;
   watchlist_count: number;
 };
@@ -78,8 +80,22 @@ export default function Settings() {
           </View>
           <Card>
             <Button title="알림 설정" onPress={() => router.push('/notification-settings')} />
+            <Button title="검색 이력" secondary onPress={() => router.push('/search-history')} />
             <Button title="맞춤기업 기준 관리" secondary onPress={() => router.push('/custom')} />
             <Button title="로그아웃" secondary onPress={logout} />
+          </Card>
+          <Card>
+            <Muted>탈퇴하면 계정과 저장한 사용자 데이터가 즉시 삭제됩니다.</Muted>
+            <Button
+              title="회원 탈퇴"
+              danger
+              onPress={() =>
+                router.push({
+                  pathname: '/auth/delete-account',
+                  params: { hasPassword: String(profile.has_password) },
+                })
+              }
+            />
           </Card>
         </>
       ) : (

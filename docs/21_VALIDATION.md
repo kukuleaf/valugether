@@ -1,15 +1,57 @@
 # 21. 검증 상태
 
-기준일: 2026-09-19
+기준일: 2026-09-25
 
 ## 이번에 통과한 검증
+
+- 2026-09-25 전체 회귀와 운영 검증
+  - `npm run typecheck`, `npm run build` 통과. Next.js 관리자 15개 route 생성
+  - `npm run test:e2e` 3/3, `npm run test:batch` 2/2, `npm run test:queue` 1/1, `npm run test:ui:e2e` 4/4 통과
+  - 관리자 보호 경로, CSP/보안 헤더, same-origin mutation, 로그인/로그아웃, 공지 lifecycle, Excel export를 Playwright Chromium으로 확인
+  - 모바일 web 홈·검색·고급 조건·로그인 session·로그아웃을 Playwright Chromium으로 확인
+  - Mock 가격 첫 실행 insert/재실행 update와 invalid row savepoint rollback 후 후속 행 처리 확인
+  - 임시 Redis 7에서 BullMQ worker 기동과 `DATA_QUALITY_CHECK` job 완료, failed 0 확인
+  - PostgreSQL 17 custom dump를 격리 PostgreSQL 17에 복원. table 49개, company 10,038개, security 11,653개 일치
+  - backup/restore와 queue 검증의 임시 컨테이너·dump 0개 잔존 확인
+  - Expo SDK 57 권장 patch 갱신 후 공식 Expo Doctor 21/21 통과
+  - `npm audit`: Multer 2.3.0 override로 high 3개 제거, high/critical 0. upstream Expo/ExcelJS 계열 moderate 14개는 breaking downgrade 없이 추적
+  - KIS 최신 가격 갱신: KOSPI 412개, KOSDAQ 10개, NASDAQ 198개, NYSE 123개, 오류 0
+  - 최신 거래일: KOSPI·KOSDAQ 2026-09-23, NASDAQ·NYSE 2026-09-24
+  - `data-status`에 거래소별 최신 거래일과 해당 일자 가격 종목 수 추가
+
+- PostgreSQL 17.11 전체 신규 설치
+  - 격리된 빈 컨테이너에서 `00_create_database.sql`로 역할과 DB 생성
+  - `01_extensions.sql`부터 `15_data_quality.sql`까지 순차 적용 성공
+  - `00`~`15` 전체 재적용 성공으로 로컬 개발용 idempotency 확인
+  - public table 49개, view 3개, 재무지표 67개, 일반 전략 4개/조건 14개, 배치 정의 7개, 약관 4개 확인
+  - 전략 조건·가격·최신지표 참조 무결성 오류와 전략 중복 지표 0건
+  - 신규 DB로 NestJS API 기동, 일반 전략/지표/약관/공지 조회와 데모 로그인 성공
+  - 관리자 데이터 품질 실행·최신 결과 재조회 성공
+  - 비활성 데모 종목만 있는 신규 DB가 `PASS`로 판정되던 문제를 발견해 `ACTIVE_SECURITY_EMPTY/CRITICAL`로 수정·재검증
+  - 검증 전용 API 종료와 임시 PostgreSQL 컨테이너 제거 완료
 
 - `npm run typecheck`
   - NestJS API `tsc --noEmit` 통과
   - Expo 모바일 `tsc --noEmit` 통과
 - `npm run build`
   - NestJS production build 통과
-  - Next.js 관리자 production build 및 12개 route 생성 통과
+  - Next.js 관리자 production build 및 15개 route 생성 통과
+- `npm run test:e2e`
+  - Node 내장 test runner와 임시 포트의 실제 NestJS HTTP 서버 사용
+  - 공개 catalog/health 1개 묶음 통과
+  - 로그인·내 정보·refresh 회전·이전 token 재사용 401·관리자 접근 403·로그아웃 1개 묶음 통과
+  - DTO whitelist 400, 검색 이력, 관심종목, 프리셋 CRUD, 알림 설정 1개 묶음 통과
+  - 서버 생성·클라이언 제공·잘못된 request ID 교체와 응답 헤더 확인
+  - 400·401·500 오류 응답 형식과 request ID 일치 확인
+  - 검색 이력·감사·`application_error_log` request ID 적재 확인
+  - 예상하지 못한 500 내부 메시지 비공개와 오류 로그 자동 정리 확인
+  - CORS 허용 Origin preflight 204/allow-origin 헤더와 비허용 Origin 헤더 미반환 확인
+  - 운영 환경 CORS allowlist 미설정 거부 확인
+  - 인증 API 3회 허용 후 4회째 429, `Retry-After`·남은 횟수·request ID 확인
+  - 테스트 계정·검색 이력·감사 로그 자동 정리와 잔여 테스트 계정 0건 확인
+- 임시 Redis 7 컨테이너 공유 rate-limit 검증
+  - 독립 `RateLimitService` 두 개가 같은 key의 카운터 1→2→3을 공유하는 것 확인
+  - 검증 후 임시 컨테이너 제거
 - `node tools/near-match-demo.mjs`
   - 6개 예제 통과: EXACT 1건, NEAR 3건, FAIL 2건
 - PostgreSQL 17.11 기존 개발 DB 구조 확인
@@ -17,6 +59,8 @@
   - SQL `10`~`12`의 table, column, index 적용 확인
   - 종목·가격·지표·프리셋 참조 무결성 오류 0건
   - `13_auth_tokens.sql` 인증 token 조회·정리 index 적용
+  - `14_notification_email_delivery.sql` 이메일 opt-in, 발송 상태, 재처리 조회 index 적용
+  - `15_data_quality.sql` 품질 실행/이슈 table, index, 배치 정의 적용 및 재실행 성공
 - 실제 외부 provider 동기화
   - OpenDART pagination 1차: cursor `0`→`313`, 200/200, 오류 0개
   - OpenDART pagination 2차: cursor `313`→`542`, 200/200, 오류 0개
@@ -58,27 +102,53 @@
   - 비밀번호 재설정 뒤 기존 비밀번호 401, 새 비밀번호 200, token 재사용 400
   - `user_password`가 없는 간편로그인 전용 계정에는 인증·재설정 메일 0건
   - 임시 로컬·소셜 계정과 Mailpit 테스트 메일 정리 완료
+  - Resend SMTP 인증 성공 및 `onboarding@resend.dev`에서 계정 소유자 Gmail로 실제 인증
+    템플릿 전달 수락 확인. 서비스 도메인 등록 전 전달 시험 범위로 한정
+- 회원 탈퇴 E2E
+  - 잘못된 현재 비밀번호 401, 올바른 비밀번호 탈퇴 성공
+  - 관심종목 1개, 프리셋 1개, 검색 이력 1개 삭제 집계 확인
+  - 탈퇴 후 계정 0건, 기존 access JWT 401, 동일 자격 로그인 401
+  - 탈퇴 감사 기록의 `actor_user_id`와 `target_id`가 `NULL`인 비식별 상태 확인
+- 검색 이력 API runtime
+  - 비로그인 조회 401, 로그인 검색 2건의 사용자별 자동 기록 확인
+  - `beforeId` 커서 페이지 이동, 단건 삭제, 전체 삭제와 최종 빈 목록 확인
+  - 임시 사용자의 이력이 다른 사용자와 섞이지 않는 것 확인 후 테스트 데이터 제거
+- 프리셋 이메일 알림 runtime
+  - 최초 프리셋 평가가 기준선만 저장하고 메일을 보내지 않는 것 확인
+  - 신규 충족 기업만 1회 발송하고 동일 결과 재평가 시 중복 발송 0건 확인
+  - 발송 상태 `SENT/FAILED`, 실패 격리, HTML escaping, 앱 딥링크 확인
+  - 내부 알림 평가가 사용자 검색 이력을 생성하지 않는 것 확인
+  - 이메일 opt-in 기본값 `false`, 설정 저장·조회 확인 후 임시 데이터 제거
+- 관리자 전략·공지 runtime
+  - 임시 비활성 전략을 생성해 이름·설명·순서·필수 여부·가중치·조건 저장 확인
+  - 전략 활성화 뒤 공개 전략 API에 수정된 조건과 숫자 형식이 반영되는 것 확인
+  - 공지 작성 중 생성 → 수정 → 게시 → 공개 목록 노출 → 보관 → 공개 목록 제외 확인
+  - 작성 중 공지 삭제와 모든 7개 변경의 감사 로그 호출 확인
+  - 임시 전략·공지·사용자 데이터 제거 완료
+- 데이터 품질 runtime
+  - 실제 개발 DB에서 가격·재무 최신성/커버리지, 최신 가격 이상값, 정체·실패 배치 18개 검사 실행
+  - 현재 부분 적재 상태에서 가격 커버리지 4개 거래소와 재무 커버리지 2개 시장의 심각 이슈 6건 감지
+  - 품질 실행/이슈/배치 결과 저장과 최신 결과 재조회 확인
+  - 운영 이메일 비활성 상태에서 SMTP를 호출하지 않고 `SKIPPED_DISABLED`로 기록 확인
+  - 동일 이슈 조합을 연속 실행해 첫 운영 알림 1회, 두 번째 `SKIPPED_DUPLICATE` 확인 후 임시 검증 기록 제거
 
 ## 구현을 확인했지만 런타임 검증이 필요한 범위
 
-- 빈 DB 대상 PostgreSQL DDL, seed, 증분 SQL
-- 고급 검색과 검색 이력 적재
-- 관리자 대시보드, 허용오차, 약관, 배치, 감사 로그, 엑셀 export
-- 영속 Redis 대상 BullMQ 관리자 queue/schedule API
+- 고급 검색 대규모 지표 조합과 성능. 각 operator·거래소·상태 필터는 자동 E2E 완료
+- 관리자·모바일 실제 기기 접근성/수동 탐색. Chromium 자동 E2E는 완료
+- 운영 영속 Redis와 실제 활성 cron 장기 실행. 격리 Redis queue/worker 자동 E2E는 완료
 - Marketstack 수집과 정규화
 
 ## 아직 수행하지 못한 검증
 
-- 핵심 사용자 흐름을 반복 실행할 자동화 integration/E2E test suite
-- 빈 PostgreSQL 17에 `00_create_database.sql`부터 `13_auth_tokens.sql`까지 적용한 뒤 API 기동
 - Marketstack 실제 키 수집 테스트
 - DART/SEC 전체 cursor 순회와 순회 완료 후 `0` reset 검증
 - 재무지표가 있지만 가격이 없는 NYSE 24개 종목 원인 확인
-- Mock provider 중복 방지와 부분 실패 복구 테스트
 - Android 실제 기기 및 EAS build
 - Google/Kakao/Naver callback
-- 이메일/push 알림 전송과 AdMob SDK
-- 기존 로컬 Redis volume RDB의 현재 이미지 호환성 복구 및 영속 Redis에서 worker 재검증
-- 부하, 보안, 백업/복구 테스트
+- 소셜 로그인 provider 재인증 기반 회원 탈퇴
+- push 알림 전송과 AdMob SDK
+- 기존 로컬 Redis volume RDB의 현재 이미지 호환성 복구 및 운영 영속 Redis 장기 검증
+- 부하·외부 침투 테스트와 운영 backup 암호화·스케줄 검증
 
-현재 상태는 **정적 검사, API/관리자 build, 기존 PostgreSQL DB, 핵심 사용자 E2E, OpenDART/SEC/KIS 실데이터 동기화를 검증한 MVP 구현본**이다. 신규 DB 전체 설치와 자동화 E2E suite를 통과하기 전까지 출시 가능 판정은 아니다. 다음 검증 순서는 `docs/11_TODO_TOBE.md`의 P0를 따른다.
+현재 상태는 **정적 검사, production build, PostgreSQL 17 신규 설치·백업 복구, API·배치·큐·관리자·모바일 web 자동 E2E, OpenDART/SEC/KIS 실데이터 동기화를 검증한 MVP 구현본**이다. Android 실제 기기/EAS와 외부 계정·도메인·법률·운영 인프라 검증 전까지 출시 가능 판정은 아니다.

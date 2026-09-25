@@ -12,6 +12,6 @@
         "backgroundColor": "#F5F7FA"
       }
     },
-    "plugins": ["expo-router", "expo-status-bar"]
+    "plugins": ["expo-router", "expo-status-bar", "expo-secure-store"]
   }
 }

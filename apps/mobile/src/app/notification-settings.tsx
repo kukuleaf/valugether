@@ -5,6 +5,8 @@ import { Button, Card, H1, LoadingState, Muted, Page, palette } from '../compone
 
 type NotificationSettings = {
   custom_company_enabled: boolean;
+  email_enabled: boolean;
+  email_available: boolean;
   notification_interval_days: number;
   next_notification_at: string | null;
   last_notification_at: string | null;
@@ -14,14 +16,17 @@ export default function NotificationSettingsPage() {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [intervalDays, setIntervalDays] = useState(1);
+  const [emailEnabled, setEmailEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const emailAvailable = settings?.email_available ?? false;
 
   useEffect(() => {
     api<NotificationSettings>('/presets/notification-settings', undefined, true)
       .then((data) => {
         setSettings(data);
         setEnabled(data.custom_company_enabled);
+        setEmailEnabled(data.email_enabled);
         setIntervalDays(data.notification_interval_days);
       })
       .catch((cause: any) => setMessage(cause.message));
@@ -35,7 +40,7 @@ export default function NotificationSettingsPage() {
         '/presets/notification-settings',
         {
           method: 'PATCH',
-          body: JSON.stringify({ enabled, intervalDays }),
+          body: JSON.stringify({ enabled, emailEnabled, intervalDays }),
         },
         true,
       );
@@ -82,6 +87,22 @@ export default function NotificationSettingsPage() {
               <Text style={styles.intervalText}>{days === 1 ? '매일' : `${days}일마다`}</Text>
             </Pressable>
           ))}
+        </View>
+        <View style={styles.row}>
+          <View style={styles.copy}>
+            <Text style={styles.title}>이메일로도 받기</Text>
+            <Muted>
+              {emailAvailable
+                ? '이메일 인증이 완료된 주소로 새 매칭 결과를 보냅니다.'
+                : '발신 도메인을 연결한 뒤 사용할 수 있습니다.'}
+            </Muted>
+          </View>
+          <Switch
+            accessibilityLabel="맞춤 기업 이메일 알림"
+            disabled={!enabled || !emailAvailable}
+            value={emailEnabled}
+            onValueChange={setEmailEnabled}
+          />
         </View>
         <Button title={saving ? '저장 중…' : '알림 설정 저장'} onPress={save} />
       </Card>

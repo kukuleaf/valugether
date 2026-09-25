@@ -14,10 +14,10 @@ import { DB_POOL } from '../common/database/database.module';
 import { PresetAlertsService } from '../presets/preset-alerts.service';
 import { FinancialSyncService } from './financial-sync.service';
 import { MarketPriceSyncService } from './market-price-sync.service';
+import { DataQualityService } from './data-quality.service';
 
 type BatchJobData = {
   batchCode: SupportedBatchCode;
-  requestedByUserId?: string;
 };
 
 const SUPPORTED_BATCH_CODES = [
@@ -26,6 +26,7 @@ const SUPPORTED_BATCH_CODES = [
   'DART_FINANCIAL_SYNC',
   'SEC_FINANCIAL_SYNC',
   'PRESET_MATCH_NOTIFY',
+  'DATA_QUALITY_CHECK',
 ] as const;
 
 type SupportedBatchCode = (typeof SUPPORTED_BATCH_CODES)[number];
@@ -46,6 +47,7 @@ export class BatchQueueService implements OnModuleInit, OnModuleDestroy {
     private readonly financial: FinancialSyncService,
     private readonly prices: MarketPriceSyncService,
     private readonly presetAlerts: PresetAlertsService,
+    private readonly dataQuality: DataQualityService,
   ) {
     this.enabled = this.config.get<string>('BATCH_WORKER_ENABLED') === 'true';
     this.queueName = this.config.get<string>('BATCH_QUEUE_NAME') ?? 'right-stock-batch';
@@ -67,9 +69,12 @@ export class BatchQueueService implements OnModuleInit, OnModuleDestroy {
         concurrency: 1,
       });
       this.worker.on('failed', (job, error) => {
-        void this.recordFailure(job, error).catch((logError) =>
-          this.logger.error('Failed to record batch queue error', logError),
-        );
+        const finalAttempt = !job || job.attemptsMade >= Number(job.opts.attempts ?? 1);
+        if (finalAttempt) {
+          void this.recordFailure(job, error).catch((logError) =>
+            this.logger.error('Failed to record batch queue error', logError),
+          );
+        }
       });
       this.worker.on('error', (error) => {
         const now = Date.now();
@@ -113,13 +118,13 @@ export class BatchQueueService implements OnModuleInit, OnModuleDestroy {
     return { enabled: true, queueName: this.queueName, definitions, counts, schedulers };
   }
 
-  async enqueue(batchCode: string, requestedByUserId?: string) {
+  async enqueue(batchCode: string) {
     const code = this.assertSupported(batchCode);
     const queue = this.requireQueue();
     const definition = await this.loadDefinition(code);
     const job = await queue.add(
       code,
-      { batchCode: code, requestedByUserId },
+      { batchCode: code },
       {
         ...this.jobOptions(Number(definition.max_retry)),
         deduplication: { id: code },
@@ -191,6 +196,8 @@ export class BatchQueueService implements OnModuleInit, OnModuleDestroy {
           return this.runPrices(['XNAS', 'XNYS'], 'US_EOD_PRICE_SYNC');
         case 'PRESET_MATCH_NOTIFY':
           return this.presetAlerts.runDue();
+        case 'DATA_QUALITY_CHECK':
+          return this.dataQuality.run('SCHEDULER');
       }
     });
   }

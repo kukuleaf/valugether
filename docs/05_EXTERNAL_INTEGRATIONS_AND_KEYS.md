@@ -189,12 +189,10 @@ EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID=
 
 - Mailpit (docker-compose 포함)
 
-운영 후보:
-
-- AWS SES
-- SendGrid
-- Resend
-- 국내 메일 발송 서비스
+초기 운영 발송 provider는 개인 계정으로 사용할 수 있는 Resend로 결정했습니다. 발신
+도메인은 아직 미정입니다. 도메인 등록 전 `onboarding@resend.dev`는 계정 소유자 대상
+전달 테스트에만 사용하고, 일반 사용자 발송은 활성화하지 않습니다. 로컬 개발은 Mailpit을
+계속 사용합니다.
 
 환경변수:
 
@@ -207,11 +205,21 @@ SMTP_PASSWORD=
 MAIL_FROM=
 EMAIL_VERIFICATION_URL=rightstockvalue://auth/verify-email
 PASSWORD_RESET_URL=rightstockvalue://auth/reset-password
+PRESET_ALERT_URL=rightstockvalue://custom
+PRESET_ALERT_EMAIL_ENABLED=false
 ```
 
 이메일 인증과 비밀번호 재설정은 이메일/비밀번호(`user_password`) 계정에만 적용합니다.
 Google/Kakao/Naver 간편 로그인 계정은 소셜 provider의 검증 결과를 사용하므로 이 메일
 인증·재설정 흐름의 대상이 아닙니다.
+
+Resend SMTP 설정은 `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`,
+`SMTP_SECURE=true`, `SMTP_USER=resend`입니다. API 키는 `apps/api/.env` 또는 운영
+secret 저장소의 `SMTP_PASSWORD`에만 넣고 문서·예제 파일·Git에는 기록하지 않습니다.
+
+프리셋 이메일 알림은 사용자별 opt-in과 `PRESET_ALERT_EMAIL_ENABLED=true`가 모두 충족될
+때만 발송합니다. 도메인 인증 전에는 전역 스위치를 `false`로 유지합니다. 발송 결과는
+`user_notification.email_status`에 `PENDING/SENT/FAILED/SKIPPED`로 기록됩니다.
 
 ## E. 오류 추적(선택)
 

@@ -488,6 +488,12 @@ CREATE TABLE IF NOT EXISTS user_notification (
   title             varchar(200) NOT NULL,
   body              text NOT NULL,
   payload_json      jsonb NOT NULL DEFAULT '{}'::jsonb,
+  email_status      varchar(20) NOT NULL DEFAULT 'NOT_REQUESTED'
+                    CONSTRAINT ck_user_notification_email_status
+                    CHECK (email_status IN ('NOT_REQUESTED','PENDING','SENT','FAILED','SKIPPED')),
+  email_attempted_at timestamptz,
+  email_sent_at     timestamptz,
+  email_error       text,
   read_at           timestamptz,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
@@ -495,6 +501,7 @@ CREATE TABLE IF NOT EXISTS user_notification (
 CREATE TABLE IF NOT EXISTS user_notification_setting (
   user_id           uuid PRIMARY KEY REFERENCES app_user(user_id) ON DELETE CASCADE,
   custom_company_enabled boolean NOT NULL DEFAULT false,
+  email_enabled     boolean NOT NULL DEFAULT false,
   notification_interval_days smallint NOT NULL DEFAULT 1
     CHECK (notification_interval_days BETWEEN 1 AND 30),
   next_notification_at timestamptz,
@@ -598,6 +605,34 @@ CREATE TABLE IF NOT EXISTS data_ingestion_log (
   updated_count     integer NOT NULL DEFAULT 0,
   skipped_count     integer NOT NULL DEFAULT 0,
   error_count       integer NOT NULL DEFAULT 0,
+  details_json      jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS data_quality_run (
+  data_quality_run_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  batch_run_id      uuid REFERENCES batch_job_run(batch_run_id) ON DELETE SET NULL,
+  status_code       varchar(30) NOT NULL DEFAULT 'RUNNING',
+  started_at        timestamptz NOT NULL DEFAULT now(),
+  ended_at          timestamptz,
+  checked_count     integer NOT NULL DEFAULT 0,
+  warning_count     integer NOT NULL DEFAULT 0,
+  critical_count    integer NOT NULL DEFAULT 0,
+  summary_json      jsonb NOT NULL DEFAULT '{}'::jsonb,
+  alert_status_code varchar(30),
+  alert_sent_at     timestamptz,
+  created_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS data_quality_issue (
+  data_quality_issue_id bigserial PRIMARY KEY,
+  data_quality_run_id uuid NOT NULL REFERENCES data_quality_run(data_quality_run_id) ON DELETE CASCADE,
+  check_code        varchar(100) NOT NULL,
+  severity_code     varchar(20) NOT NULL,
+  market_code       varchar(20),
+  actual_value      numeric(38,10),
+  threshold_value   numeric(38,10),
+  message           text NOT NULL,
   details_json      jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
