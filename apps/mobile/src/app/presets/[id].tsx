@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api, ScreenPreset } from '../../lib/api';
 import { Button, Card, H1, LoadingState, Muted, Page, palette } from '../../components/ui';
 
@@ -32,14 +32,23 @@ export default function PresetDetail() {
   const [preset, setPreset] = useState<ScreenPreset | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [error, setError] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    setPreset(null);
+    setError('');
     Promise.all([api<ScreenPreset>(`/presets/${id}`, undefined, true), api<Metric[]>('/metrics')])
       .then(([presetData, metricData]) => {
+        if (!active) return;
         setPreset(presetData);
         setMetrics(metricData);
       })
-      .catch((cause: any) => setError(cause.message));
+      .catch((cause: any) => active && setError(cause.message));
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   const metricMap = useMemo(
@@ -55,22 +64,19 @@ export default function PresetDetail() {
       </Page>
     );
 
-  const deletePreset = () => {
-    Alert.alert('기준 삭제', `'${preset.preset_name}' 기준을 삭제할까요?`, [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await api(`/presets/${preset.preset_id}`, { method: 'DELETE' }, true);
-            router.replace('/custom');
-          } catch (cause: any) {
-            setError(cause.message);
-          }
-        },
-      },
-    ]);
+  const deletePreset = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setConfirmOpen(false);
+    setError('');
+    try {
+      await api(`/presets/${preset.preset_id}`, { method: 'DELETE' }, true);
+      router.replace('/custom');
+    } catch (cause: any) {
+      setError(cause.message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -104,25 +110,33 @@ export default function PresetDetail() {
           })}
         </Card>
         <Button
-          title="오늘의 조건 충족 기업 조회"
-          onPress={() =>
-            router.push({
-              pathname: '/results',
-              params: {
-                conditions: JSON.stringify(preset.conditions),
-                exchanges: JSON.stringify(preset.exchange_filter_json),
-              },
-            })
-          }
-        />
-        <Button
           title="기준 수정"
           secondary
           onPress={() => router.push({ pathname: '/advanced', params: { presetId: String(id) } })}
         />
-        <Button title="기준 삭제" secondary onPress={deletePreset} />
+        <Button
+          title={deleting ? '삭제 중…' : '기준 삭제'}
+          disabled={deleting}
+          secondary
+          onPress={() => setConfirmOpen(true)}
+        />
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </Page>
+      <Modal
+        visible={confirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Card style={styles.confirmCard}>
+            <H1>기준 삭제</H1>
+            <Muted>'{preset.preset_name}' 기준을 삭제할까요?</Muted>
+            <Button title="삭제" danger onPress={() => void deletePreset()} />
+            <Button title="취소" secondary onPress={() => setConfirmOpen(false)} />
+          </Card>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -130,6 +144,14 @@ export default function PresetDetail() {
 const styles = StyleSheet.create({
   screen: { backgroundColor: palette.bg },
   content: { paddingBottom: 30 },
+  modalBackdrop: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  confirmCard: { width: '100%', maxWidth: 440 },
   sectionTitle: { color: palette.text, fontSize: 16, fontWeight: '900' },
   value: { color: palette.accent, fontSize: 14, fontWeight: '800' },
   condition: {

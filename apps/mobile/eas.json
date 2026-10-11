@@ -9,7 +9,8 @@
       "distribution": "internal",
       "environment": "development",
       "env": {
-        "VALUGETHER_BUILD_ENV": "development"
+        "VALUGETHER_BUILD_ENV": "development",
+        "EXPO_PUBLIC_ADS_ENABLED": "true"
       }
     },
     "preview": {
@@ -17,7 +18,8 @@
       "autoIncrement": true,
       "environment": "preview",
       "env": {
-        "VALUGETHER_BUILD_ENV": "preview"
+        "VALUGETHER_BUILD_ENV": "preview",
+        "EXPO_PUBLIC_ADS_ENABLED": "true"
       },
       "android": {
         "buildType": "apk"
@@ -27,7 +29,11 @@
       "autoIncrement": true,
       "environment": "production",
       "env": {
-        "VALUGETHER_BUILD_ENV": "production"
+        "VALUGETHER_BUILD_ENV": "production",
+        "EXPO_PUBLIC_ADS_ENABLED": "true",
+        "EXPO_PUBLIC_ADMOB_ANDROID_APP_ID": "ca-app-pub-5560163853842844~6891356682",
+        "EXPO_PUBLIC_ADMOB_HOME_BANNER_UNIT_ID": "ca-app-pub-5560163853842844/2984910423",
+        "EXPO_PUBLIC_ADMOB_RESULTS_BANNER_UNIT_ID": "ca-app-pub-5560163853842844/2952111675"
       },
       "android": {
         "buildType": "app-bundle"

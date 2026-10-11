@@ -1,12 +1,14 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, LayoutChangeEvent, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { PersistentTabBar } from '../../components/PersistentTabBar';
 import { PriceDataNotice, PriceStatus } from '../../components/PriceDataNotice';
 import { api } from '../../lib/api';
+import { getAccess } from '../../lib/session';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type MetricHistory = {
   period_type: string;
@@ -92,6 +94,7 @@ type StockDetail = {
   sector_code: string | null;
   is_financial: boolean;
   website_url: string | null;
+  business_summary: string | null;
   market_code: string;
   exchange_code: string;
   mic: string | null;
@@ -142,48 +145,99 @@ type DetailTab = (typeof tabs)[number]['code'];
 type PeriodMode = 'QUARTER' | 'ANNUAL' | 'ALL';
 
 export default function StockDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [stock, setStock] = useState<StockDetail | null>(null);
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [profileOpen, setProfileOpen] = useState(false);
-  const [periodMode, setPeriodMode] = useState<PeriodMode>('QUARTER');
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('ANNUAL');
   const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
   const [priceChartOpen, setPriceChartOpen] = useState(false);
   const [priceRange, setPriceRange] = useState('6M');
   const [chartPrices, setChartPrices] = useState<Price[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState('');
+  const [favorite, setFavorite] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const detailScroll = useRef<ScrollView>(null);
+  const tabBarY = useRef(0);
 
   useEffect(() => {
+    let active = true;
     setStock(null);
     setError('');
+    setFavorite(false);
+    setPriceChartOpen(false);
     api<StockDetail>(`/stocks/${id}`)
-      .then(setStock)
-      .catch(() => setError('기업정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'));
+      .then((result) => { if (active) setStock(result); })
+      .catch(() => { if (active) setError('기업정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'); });
+    return () => { active = false; };
   }, [id, retryCount]);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setFavorite(false);
+    void getAccess().then((token) => {
+      if (!token || !active) return;
+      return api<Array<{ security_id: number | null }>>('/watchlists/default', undefined, true)
+        .then((items) => active && setFavorite(items.some((item) => Number(item.security_id) === Number(id))))
+        .catch(() => undefined);
+    });
+    return () => { active = false; };
+  }, [id]));
+
+  const toggleFavorite = async () => {
+    if (favoriteBusy) return;
+    if (!(await getAccess())) {
+      Alert.alert('로그인 필요', '관심기업을 저장하려면 로그인해 주세요.', [
+        { text: '취소', style: 'cancel' },
+        { text: '로그인', onPress: () => router.push('/auth/login') },
+      ]);
+      return;
+    }
+    setFavoriteBusy(true);
+    try {
+      await api(`/watchlists/default/items${favorite ? `/${id}` : ''}`, favorite
+        ? { method: 'DELETE' }
+        : { method: 'POST', body: JSON.stringify({ securityId: Number(id) }) }, true);
+      setFavorite(!favorite);
+    } catch (cause: any) {
+      Alert.alert('관심기업 변경 실패', cause.message ?? '다시 시도해 주세요.');
+    } finally {
+      setFavoriteBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!priceChartOpen) return;
+    let active = true;
     setChartLoading(true);
+    setChartPrices([]);
     setChartError('');
     api<{ prices: Price[] }>(`/stocks/${id}/prices?range=${priceRange}`)
-      .then((result) => setChartPrices(result.prices))
+      .then((result) => { if (active) setChartPrices(result.prices); })
       .catch(() => {
+        if (!active) return;
         setChartPrices([]);
         setChartError('선택 기간의 시세를 불러오지 못했습니다.');
       })
-      .finally(() => setChartLoading(false));
+      .finally(() => { if (active) setChartLoading(false); });
+    return () => { active = false; };
   }, [id, priceChartOpen, priceRange]);
 
   const groups = useMemo(() => {
     if (!stock) return [];
-    return [...new Set(stock.metrics.map((metric) => metric.statement_type))].map((code) => ({
+    const order = ['IS', 'BS', 'CF', 'RATIO', 'GROWTH', 'VALUATION', 'MARKET', 'TREND', 'DIVIDEND'];
+    return [...new Set(stock.metrics.map((metric) => metric.statement_type))]
+      .sort((a, b) => (order.indexOf(a) < 0 ? order.length : order.indexOf(a)) - (order.indexOf(b) < 0 ? order.length : order.indexOf(b)))
+      .map((code) => ({
       code,
       title: categoryLabels[code] ?? '기타 정보',
       metrics: stock.metrics.filter((metric) => metric.statement_type === code),
-    }));
+      }));
   }, [stock]);
 
   if (!stock && !error) {
@@ -234,12 +288,12 @@ export default function StockDetailScreen() {
 
   return (
     <View style={styles.screenShell}>
-      <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent}>
+      <ScrollView ref={detailScroll} style={styles.screen} contentContainerStyle={styles.scrollContent} scrollEventThrottle={16} onScroll={(event) => setShowScrollTop(event.nativeEvent.contentOffset.y > 50)}>
         <Page>
           <LinearGradient colors={['#123E58', '#176B87']} style={styles.hero}>
-            <View style={styles.heroFavorite}>
-              <Ionicons name="heart-outline" size={21} color="#D9FFF4" />
-            </View>
+            <Pressable accessibilityRole="button" accessibilityLabel={favorite ? '관심기업에서 제거' : '관심기업에 추가'} accessibilityState={{ disabled: favoriteBusy }} disabled={favoriteBusy} onPress={() => void toggleFavorite()} style={styles.heroFavorite}>
+              <Ionicons name={favorite ? 'heart' : 'heart-outline'} size={21} color="#D9FFF4" />
+            </Pressable>
             <View style={styles.heroIcon}>
               <Ionicons name="business" size={25} color="#176B87" />
             </View>
@@ -268,11 +322,14 @@ export default function StockDetailScreen() {
             asOfDate={stock.latest_price?.trade_date ?? null}
           />
 
-          <View style={styles.tabBar}>
+          <View style={styles.tabBar} onLayout={(event) => { tabBarY.current = event.nativeEvent.layout.y; }}>
             {tabs.map((tab) => (
               <Pressable
                 key={tab.code}
-                onPress={() => setActiveTab(tab.code)}
+                onPress={() => {
+                  setActiveTab(tab.code);
+                  requestAnimationFrame(() => detailScroll.current?.scrollTo({ y: Math.max(0, tabBarY.current - 12), animated: true }));
+                }}
                 style={[styles.tab, activeTab === tab.code && styles.tabActive]}
               >
                 <Text style={[styles.tabText, activeTab === tab.code && styles.tabTextActive]}>
@@ -316,6 +373,13 @@ export default function StockDetailScreen() {
 
           {activeTab === 'overview' && (
             <>
+              <Card>
+                <SectionHeader icon="information-circle-outline" title="어떤 기업인가요?" />
+                <Text style={styles.businessSummary}>
+                  {stock.business_summary || '검증된 사업 소개가 아직 없습니다. 아래 업종·공식 웹사이트를 확인해 주세요.'}
+                </Text>
+                {stock.industry_code && <Muted>업종 코드: {stock.industry_code}</Muted>}
+              </Card>
               <ExpandableCard
                 title="기업 기본정보"
                 icon="business-outline"
@@ -347,12 +411,10 @@ export default function StockDetailScreen() {
                     <PriceCell label="수정 종가" value={stock.latest_price.adjusted_close} />
                     <PriceCell label="거래량" value={stock.latest_price.volume} />
                   </View>
-                  {stock.price_history.length > 1 && (
-                    <Pressable style={styles.inlineButton} onPress={() => setPriceChartOpen(true)}>
-                      <Text style={styles.inlineButtonText}>주가 차트 보기</Text>
-                      <Ionicons name="stats-chart" size={17} color={palette.accent} />
-                    </Pressable>
-                  )}
+                  <Pressable accessibilityRole="button" style={styles.inlineButton} onPress={() => { setChartLoading(true); setPriceChartOpen(true); }}>
+                    <Text style={styles.inlineButtonText}>주가 차트 보기</Text>
+                    <Ionicons name="stats-chart" size={17} color={palette.accent} />
+                  </Pressable>
                 </Card>
               ) : (
                 <Card>
@@ -424,6 +486,11 @@ export default function StockDetailScreen() {
           </View>
         </Page>
       </ScrollView>
+      {showScrollTop && (
+        <Pressable accessibilityRole="button" accessibilityLabel="맨 위로" onPress={() => detailScroll.current?.scrollTo({ y: 0, animated: true })} style={[styles.scrollTop, { bottom: 80 + insets.bottom }]}>
+          <Ionicons name="arrow-up" size={23} color="white" />
+        </Pressable>
+      )}
       <PersistentTabBar />
 
       <PeriodMenu
@@ -437,7 +504,7 @@ export default function StockDetailScreen() {
       />
       <PriceChartModal
         visible={priceChartOpen}
-        prices={chartPrices.length ? chartPrices : stock.price_history}
+        prices={chartPrices}
         range={priceRange}
         loading={chartLoading}
         error={chartError}
@@ -458,6 +525,8 @@ function MetricGroups({
   currency: string;
   periodMode: PeriodMode;
 }) {
+  const [selectedCode, setSelectedCode] = useState(groups[0]?.code ?? '');
+  const selected = groups.find((group) => group.code === selectedCode) ?? groups[0];
   if (!groups.length) {
     return (
       <Card>
@@ -468,16 +537,23 @@ function MetricGroups({
 
   return (
     <>
-      {groups.map((group) => (
-        <MetricTable
-          key={group.code}
-          title={group.title}
-          icon={categoryIcons[group.code] ?? 'analytics-outline'}
-          metrics={group.metrics}
-          currency={currency}
-          periodMode={periodMode}
-        />
-      ))}
+      {groups.length > 1 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sectionNav}>
+          {groups.map((group) => (
+            <Pressable key={group.code} accessibilityRole="button" accessibilityState={{ selected: group.code === selected.code }} onPress={() => setSelectedCode(group.code)} style={[styles.sectionChip, group.code === selected.code && styles.sectionChipActive]}>
+              <Text style={[styles.sectionChipText, group.code === selected.code && styles.sectionChipTextActive]}>{group.title}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+      <MetricTable
+        key={selected.code}
+        title={selected.title}
+        icon={categoryIcons[selected.code] ?? 'analytics-outline'}
+        metrics={selected.metrics}
+        currency={currency}
+        periodMode={periodMode}
+      />
     </>
   );
 }
@@ -497,9 +573,13 @@ function MetricTable({
 }) {
   const periods = metricPeriods(metrics, periodMode);
   const [chartMetricCode, setChartMetricCode] = useState<string | null>(null);
+  const [tableWidth, setTableWidth] = useState(0);
   const chartMetric = metrics.find((metric) => metric.metric_code === chartMetricCode) ?? null;
+  const longestValue = Math.max(...metrics.flatMap((metric) => periods.map((period) => compactValue(metricValueAt(metric, period.date), metric.unit_type).length)), 8);
+  const minValueWidth = Math.min(160, Math.max(92, longestValue * 7 + 18));
+  const valueWidth = Math.max(minValueWidth, (tableWidth - 116) / Math.max(periods.length, 1));
   return (
-    <Card style={styles.tableCard}>
+    <Card testID="metric-table" style={styles.tableCard} onLayout={(event: LayoutChangeEvent) => setTableWidth(event.nativeEvent.layout.width)}>
       <View style={styles.tableTitleRow}>
         <View style={styles.tableHeading}>
           <SectionHeader icon={icon} title={title} count={metrics.length} />
@@ -515,7 +595,7 @@ function MetricTable({
         </View>
         <Text style={styles.unitNote}>금액 단위: {currency}</Text>
       </View>
-      <View style={styles.frozenTable}>
+      <View testID="metric-grid" style={styles.frozenTable}>
         <View style={styles.labelColumn}>
           <View style={[styles.tableCell, styles.metricLabelCell, styles.tableHeader]}>
             <Text style={styles.tableHeaderText}>항목</Text>
@@ -540,7 +620,7 @@ function MetricTable({
           <View>
             <View style={[styles.tableRow, styles.tableHeader]}>
               {periods.map((period) => (
-                <View key={period.key} style={[styles.tableCell, styles.valueCell]}>
+                <View key={period.key} style={[styles.tableCell, styles.valueCell, { width: valueWidth }]}>
                   <Text style={styles.tableHeaderText}>{period.label}</Text>
                 </View>
               ))}
@@ -551,8 +631,9 @@ function MetricTable({
                   const value = metricValueAt(metric, period.date);
                   const numeric = value?.numeric_value == null ? null : Number(value.numeric_value);
                   return (
-                    <View key={period.key} style={[styles.tableCell, styles.valueCell]}>
+                    <View key={period.key} style={[styles.tableCell, styles.valueCell, { width: valueWidth }]}>
                       <Text
+                        numberOfLines={2}
                         style={[
                           styles.tableValue,
                           numeric != null && numeric < 0 && styles.tableValueNegative,
@@ -644,18 +725,23 @@ function PriceChartModal({
       .reverse()
       .map((price) => ({ label: compactDate(price.trade_date), value: Number(price.close_price) }))
       .filter((point) => Number.isFinite(point.value)),
-    48,
+    240,
   );
+  const requestedDays: Record<string, number> = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365, '3Y': 1095, '5Y': 1825 };
+  const earliest = Math.min(...prices.map((price) => Date.parse(price.trade_date)).filter(Number.isFinite));
+  const incompleteHistory = prices.length > 0 && Number.isFinite(earliest)
+    && earliest > Date.now() - (requestedDays[range] - 14) * 86400000;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
+        <Pressable testID="price-chart-backdrop" style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.chartSheet}>
           <View style={styles.modalHeader}>
-            <View>
+            <View style={styles.modalHeadingCopy}>
               <Text style={styles.modalTitle}>주가 흐름</Text>
               <Text style={styles.chartUnit}>종가 · {currency}</Text>
             </View>
-            <Pressable onPress={onClose} style={styles.closeButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="차트 닫기" onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={22} color={palette.text} />
             </Pressable>
           </View>
@@ -677,13 +763,14 @@ function PriceChartModal({
           ) : error ? (
             <Text style={styles.error}>{error}</Text>
           ) : points.length > 1 ? (
-            <BarChart points={points} />
+            <LineChart points={points} />
           ) : (
             <Muted>선택 기간의 시세가 부족합니다.</Muted>
           )}
           <Text style={styles.chartFootnote}>
-            {points.length}개 표시 · 서버에 저장된 일별 시세 기준
+            {prices.length}일 저장 · 거래일별 종가 · 저장되지 않은 날짜는 표시하지 않음
           </Text>
+          {incompleteHistory && <Muted>선택 기간의 과거 시세 일부가 아직 수집되지 않았습니다.</Muted>}
         </View>
       </View>
     </Modal>
@@ -701,17 +788,20 @@ function MetricChartModal({
 }) {
   const points = metric
     ? metric.history
+        .filter((history) => history.numeric_value != null)
+        .slice()
+        .sort((a, b) => a.end_date.localeCompare(b.end_date))
         .map((history) => ({
           label: compactDate(history.end_date),
           value: Number(history.numeric_value),
         }))
         .filter((point) => Number.isFinite(point.value))
-        .reverse()
         .slice(-12)
     : [];
   return (
     <Modal visible={Boolean(metric)} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.chartSheet}>
           <View style={styles.modalHeader}>
             <View style={styles.modalHeadingCopy}>
@@ -720,7 +810,7 @@ function MetricChartModal({
                 {metric ? unitLabel(metric.unit_type, currency) : ''} · 최근 {points.length}개
               </Text>
             </View>
-            <Pressable onPress={onClose} style={styles.closeButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="그래프 닫기" onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={22} color={palette.text} />
             </Pressable>
           </View>
@@ -766,6 +856,42 @@ function BarChart({ points }: { points: Array<{ label: string; value: number }> 
   );
 }
 
+function LineChart({ points }: { points: Array<{ label: string; value: number }> }) {
+  const [width, setWidth] = useState(0);
+  const chartHeight = 166;
+  const min = Math.min(...points.map((point) => point.value));
+  const max = Math.max(...points.map((point) => point.value));
+  const spread = Math.max(max - min, Math.abs(max) * 0.01, 1);
+  const coordinates = points.map((point, index) => ({
+    x: (index / Math.max(points.length - 1, 1)) * width,
+    y: 10 + ((max - point.value) / spread) * (chartHeight - 20),
+  }));
+  return (
+    <View>
+      <View style={styles.lineChart} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+        <View style={styles.chartGridLine} />
+        {width > 0 && coordinates.slice(1).map((point, index) => {
+          const previous = coordinates[index];
+          const dx = point.x - previous.x;
+          const dy = point.y - previous.y;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          return <View key={`${index}-${points[index + 1].label}`} style={[styles.lineSegment, {
+            width: length,
+            left: (previous.x + point.x - length) / 2,
+            top: (previous.y + point.y) / 2 - 1,
+            transform: [{ rotateZ: `${Math.atan2(dy, dx)}rad` }],
+          }]} />;
+        })}
+      </View>
+      <View style={styles.chartAxis}>
+        <Text style={styles.axisText}>{points[0]?.label}</Text>
+        <Text style={styles.axisText}>{points.at(-1)?.label}</Text>
+      </View>
+      <Text style={styles.lineRange}>{compactNumber(min)} ~ {compactNumber(max)}</Text>
+    </View>
+  );
+}
+
 function downsample<T>(items: T[], maxPoints: number) {
   if (items.length <= maxPoints) return items;
   const step = (items.length - 1) / (maxPoints - 1);
@@ -785,7 +911,6 @@ function metricPeriods(metrics: Metric[], mode: PeriodMode) {
   for (const metric of metrics) {
     const histories = metric.history.filter((history) => matchesPeriod(history, mode));
     for (const history of histories) dates.add(history.end_date.slice(0, 10));
-    if (!histories.length && metric.as_of_date) dates.add(metric.as_of_date.slice(0, 10));
   }
   if (!dates.size) return [{ key: 'current', date: '', label: '현재' }];
   return [...dates]
@@ -1024,6 +1149,13 @@ const styles = StyleSheet.create({
   screenShell: { flex: 1, backgroundColor: palette.bg },
   screen: { backgroundColor: palette.bg },
   scrollContent: { alignItems: 'center', paddingBottom: 30 },
+  scrollTop: { position: 'absolute', right: 18, bottom: 80, width: 44, height: 44, borderRadius: 22, backgroundColor: palette.accent, alignItems: 'center', justifyContent: 'center', elevation: 5 },
+  businessSummary: { color: palette.text, fontSize: 14, lineHeight: 22 },
+  sectionNav: { flexGrow: 0 },
+  sectionChip: { marginRight: 8, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.surface },
+  sectionChipActive: { backgroundColor: '#E8F2F5', borderColor: palette.accent },
+  sectionChipText: { color: palette.muted, fontSize: 13, fontWeight: '700' },
+  sectionChipTextActive: { color: palette.accent },
   hero: { borderRadius: 24, padding: 21, overflow: 'hidden' },
   heroFavorite: {
     position: 'absolute',
@@ -1153,7 +1285,7 @@ const styles = StyleSheet.create({
   tableHeader: { backgroundColor: '#F1F6F7' },
   tableRow: { flexDirection: 'row' },
   tableCell: {
-    minHeight: 54,
+    height: 62,
     justifyContent: 'center',
     paddingHorizontal: 9,
     borderRightWidth: 1,
@@ -1161,7 +1293,7 @@ const styles = StyleSheet.create({
     borderColor: palette.line,
   },
   metricLabelCell: { width: 116, paddingHorizontal: 7 },
-  valueCell: { width: 92, alignItems: 'flex-end' },
+  valueCell: { minWidth: 92, alignItems: 'flex-end' },
   tableHeaderText: { color: palette.muted, fontSize: 11, fontWeight: '800' },
   tableMetricName: { color: palette.text, fontSize: 12, fontWeight: '800' },
   metricLabelLine: { flexDirection: 'row', alignItems: 'center', gap: 3 },
@@ -1325,4 +1457,8 @@ const styles = StyleSheet.create({
   chartAxis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
   axisText: { color: palette.muted, fontSize: 9 },
   chartFootnote: { color: palette.muted, fontSize: 10, textAlign: 'right' },
+  lineChart: { width: '100%', height: 166, overflow: 'hidden' },
+  lineSegment: { position: 'absolute', height: 2, borderRadius: 1, backgroundColor: palette.brand },
+  chartGridLine: { position: 'absolute', left: 0, right: 0, top: 82, borderTopWidth: 1, borderTopColor: palette.line },
+  lineRange: { color: palette.muted, fontSize: 10, textAlign: 'right', marginTop: 5 },
 });

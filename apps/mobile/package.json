@@ -7,8 +7,10 @@
     "start": "expo start",
     "start:web:e2e": "expo start --web --port 3102",
     "export:web:e2e": "expo export --platform web --output-dir dist/e2e-web --clear",
-    "android": "expo start --android",
-    "typecheck": "tsc --noEmit"
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit",
+    "test:ads": "node --experimental-strip-types --test test/ads.test.mjs",
+    "test:social": "node --test test/naver-adapter.test.cjs test/naver-config.test.cjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -24,6 +26,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-google-mobile-ads": "^17.2.0",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-web": "^0.21.2"
   },

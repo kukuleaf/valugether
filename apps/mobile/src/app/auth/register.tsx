@@ -20,13 +20,23 @@ export default function Register() {
   const [agreements, setAgreements] = useState<Record<number, boolean>>({});
   const [selectedTerm, setSelectedTerm] = useState<Term | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError('');
     api<Term[]>('/terms/active')
-      .then(setTerms)
-      .catch(() => Alert.alert('불러오기 실패', '약관을 불러오지 못했습니다. 다시 시도해 주세요.'))
-      .finally(() => setLoading(false));
-  }, []);
+      .then((items) => active && setTerms(items))
+      .catch(() => active && setLoadError('약관을 불러오지 못했습니다. 다시 시도해 주세요.'))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [reload]);
 
   const requiredAccepted = terms
     .filter((term) => term.is_required)
@@ -34,15 +44,23 @@ export default function Register() {
   const allAccepted = terms.length > 0 && terms.every((term) => agreements[term.term_id]);
 
   const submit = async () => {
+    if (loading || loadError || submitting) return;
+    setError('');
+    if (!email.trim() || password.length < 10) {
+      setError('이메일과 10자 이상의 비밀번호를 입력해 주세요.');
+      return;
+    }
     if (!requiredAccepted) {
+      setError('필수 약관을 확인하고 동의해 주세요.');
       Alert.alert('필수 동의 필요', '필수 약관을 확인하고 동의해 주세요.');
       return;
     }
+    setSubmitting(true);
     try {
       const result = await api<{ emailSent: boolean }>('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          email,
+          email: email.trim(),
           password,
           consents: terms.map((term) => ({
             termId: term.term_id,
@@ -58,7 +76,10 @@ export default function Register() {
       );
       router.replace({ pathname: '/auth/verify-email', params: { email } });
     } catch (error: any) {
+      setError(error.message);
       Alert.alert('가입 실패', error.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -68,14 +89,29 @@ export default function Register() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent}>
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      style={styles.screen}
+      contentContainerStyle={styles.scrollContent}
+    >
       <Page>
         <H1>회원가입</H1>
         <Muted>서비스에 필요한 정보만 최소한으로 받습니다.</Muted>
         <Card>
-          <Input placeholder="이메일" autoCapitalize="none" value={email} onChangeText={setEmail} />
+          <Input
+            accessibilityLabel="이메일"
+            placeholder="이메일"
+            keyboardType="email-address"
+            autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={email}
+            onChangeText={setEmail}
+          />
           <Input
             placeholder="비밀번호 (10자 이상)"
+            accessibilityLabel="비밀번호 (10자 이상)"
+            autoComplete="new-password"
             secureTextEntry
             value={password}
             onChangeText={setPassword}
@@ -86,6 +122,15 @@ export default function Register() {
           <Text style={styles.sectionTitle}>약관 동의</Text>
           {loading ? (
             <LoadingState label="약관을 불러오고 있어요" />
+          ) : loadError ? (
+            <>
+              <Text style={styles.error}>{loadError}</Text>
+              <Button
+                title="다시 시도"
+                secondary
+                onPress={() => setReload((current) => current + 1)}
+              />
+            </>
           ) : (
             <>
               <AgreementRow label="모두 동의" checked={allAccepted} onPress={toggleAll} strong />
@@ -109,7 +154,12 @@ export default function Register() {
           )}
         </Card>
 
-        <Button title="가입하기" onPress={submit} />
+        <Button
+          title={submitting ? '가입 중…' : '가입하기'}
+          disabled={loading || Boolean(loadError) || submitting}
+          onPress={submit}
+        />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
       </Page>
 
       <Modal
@@ -173,6 +223,7 @@ function AgreementRow({
 const styles = StyleSheet.create({
   screen: { backgroundColor: palette.bg },
   scrollContent: { paddingBottom: 30 },
+  error: { color: '#A00000', lineHeight: 21 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: palette.text },
   agreementRow: {
     flexDirection: 'row',

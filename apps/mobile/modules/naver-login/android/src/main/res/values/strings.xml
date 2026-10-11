@@ -1,0 +1,6 @@
+<resources>
+  <!-- App resources supplied by the config plugin override these unconfigured defaults. -->
+  <string name="valugether_naver_client_id" translatable="false"></string>
+  <string name="valugether_naver_client_secret" translatable="false"></string>
+  <string name="valugether_naver_client_name" translatable="false">가치보는주식</string>
+</resources>

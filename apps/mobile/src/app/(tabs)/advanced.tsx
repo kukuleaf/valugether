@@ -70,7 +70,9 @@ export default function Advanced() {
   const [mode, setMode] = useState<'BASIC' | 'DETAIL'>('BASIC');
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [metricsError, setMetricsError] = useState('');
+  const [presetError, setPresetError] = useState('');
+  const loadError = metricsError || presetError;
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(basicMetrics.map((item) => [item.code, item.value])),
   );
@@ -82,26 +84,53 @@ export default function Advanced() {
   const [presetName, setPresetName] = useState('나의 기업 기준');
   const [exchangeCodes, setExchangeCodes] = useState<string[]>([...defaultExchangeCodes]);
   const [operatorOverrides, setOperatorOverrides] = useState<Record<string, Operator>>({});
+  const [secondValues, setSecondValues] = useState<Record<string, string>>({});
+  const [weights, setWeights] = useState<Record<string, number>>({});
+  const [presetLoading, setPresetLoading] = useState(Boolean(presetId));
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    let active = true;
     api<Metric[]>('/metrics')
       .then((items) => {
+        if (!active) return;
         setMetrics(items.filter((item) => item.user_selectable));
         const categories = [...new Set(items.map((item) => item.statement_type))];
         setExpanded(
           Object.fromEntries(categories.map((category, index) => [category, index === 0])),
         );
       })
-      .catch(() => setLoadError('검색 항목을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'))
-      .finally(() => setLoading(false));
+      .catch(
+        () =>
+          active && setMetricsError('검색 항목을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'),
+      )
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
-    if (!presetId) return;
+    let active = true;
+    if (!presetId) {
+      setPresetLoading(false);
+      setPresetError('');
+      return;
+    }
+    setPresetLoading(true);
+    setPresetError('');
     api<ScreenPreset>(`/presets/${presetId}`, undefined, true)
       .then((preset) => {
+        if (!active) return;
         setPresetName(preset.preset_name);
-        setMode(preset.search_mode === 'ADVANCED_DETAIL' ? 'DETAIL' : 'BASIC');
+        const standardProfitLimit = !preset.conditions.some(
+          (item) =>
+            item.metricCode === 'PROFITABLE_CONSECUTIVE_YEARS' &&
+            (Number(item.target) !== 3 || item.operator !== 'GTE'),
+        );
+        setMode(
+          preset.search_mode === 'ADVANCED_BASIC' && standardProfitLimit ? 'BASIC' : 'DETAIL',
+        );
         setExchangeCodes(
           preset.exchange_filter_json?.length
             ? preset.exchange_filter_json
@@ -115,12 +144,27 @@ export default function Advanced() {
         setOperatorOverrides(
           Object.fromEntries(preset.conditions.map((item) => [item.metricCode, item.operator])),
         );
+        setSecondValues(
+          Object.fromEntries(
+            preset.conditions.map((item) => [
+              item.metricCode,
+              item.target2 == null ? '' : String(item.target2),
+            ]),
+          ),
+        );
+        setWeights(
+          Object.fromEntries(preset.conditions.map((item) => [item.metricCode, item.weight ?? 1])),
+        );
         setNoLossThreeYears(
           preset.conditions.some((item) => item.metricCode === 'PROFITABLE_CONSECUTIVE_YEARS'),
         );
         setUseDebtRatio(preset.conditions.some((item) => item.metricCode === 'DEBT_RATIO'));
       })
-      .catch((cause: any) => setLoadError(cause.message));
+      .catch((cause: any) => active && setPresetError(cause.message))
+      .finally(() => active && setPresetLoading(false));
+    return () => {
+      active = false;
+    };
   }, [presetId]);
 
   const metricMap = useMemo(
@@ -141,6 +185,10 @@ export default function Advanced() {
     metricCode: metric.metric_code,
     operator: operatorOverrides[metric.metric_code] ?? metric.default_operator ?? 'GTE',
     target,
+    ...(secondValues[metric.metric_code] !== undefined && secondValues[metric.metric_code] !== ''
+      ? { target2: Number(secondValues[metric.metric_code]) }
+      : {}),
+    ...(weights[metric.metric_code] !== undefined ? { weight: weights[metric.metric_code] } : {}),
   });
 
   const buildConditions = () => {
@@ -149,24 +197,36 @@ export default function Advanced() {
       conditions = basicMetrics.flatMap((item) => {
         const metric = metricMap.get(item.code);
         const value = values[item.code];
-        return metric && value !== '' ? [condition(metric, Number(value))] : [];
+        return metric && value?.trim() ? [condition(metric, Number(value))] : [];
       });
       const profitableYears = metricMap.get('PROFITABLE_CONSECUTIVE_YEARS');
-      if (noLossThreeYears && profitableYears) conditions.push(condition(profitableYears, 3));
+      if (noLossThreeYears && profitableYears) {
+        conditions.push(
+          condition(profitableYears, Number(values.PROFITABLE_CONSECUTIVE_YEARS ?? 3)),
+        );
+      }
       const debtRatio = metricMap.get('DEBT_RATIO');
-      if (useDebtRatio && debtRatio && values.DEBT_RATIO !== '') {
-        conditions.push(condition(debtRatio, Number(values.DEBT_RATIO)));
+      if (useDebtRatio && debtRatio && (values.DEBT_RATIO ?? '100').trim()) {
+        conditions.push(condition(debtRatio, Number(values.DEBT_RATIO ?? '100')));
       }
     } else {
       conditions = metrics.flatMap((metric) => {
         const value = values[metric.metric_code];
-        return value !== undefined && value !== '' ? [condition(metric, Number(value))] : [];
+        return value?.trim() ? [condition(metric, Number(value))] : [];
       });
     }
-    if (!conditions.length || conditions.some((item) => !Number.isFinite(item.target))) {
+    if (
+      !conditions.length ||
+      conditions.some(
+        (item) =>
+          !Number.isFinite(item.target) ||
+          (item.operator === 'BETWEEN' &&
+            (!Number.isFinite(item.target2) || item.target2! < item.target)),
+      )
+    ) {
       setHelp({
         title: '검색 기준을 확인해 주세요',
-        body: '숫자로 된 검색 기준을 하나 이상 입력해 주세요.',
+        body: '숫자로 된 검색 기준을 하나 이상 입력해 주세요. 범위의 최댓값은 최솟값 이상이어야 합니다.',
       });
       return null;
     }
@@ -174,6 +234,7 @@ export default function Advanced() {
   };
 
   const search = () => {
+    if (loading || presetLoading || loadError) return;
     const conditions = buildConditions();
     if (!conditions) return;
     router.push({
@@ -186,6 +247,7 @@ export default function Advanced() {
   };
 
   const openSave = async () => {
+    if (loading || presetLoading || loadError) return;
     if (!(await getAccess())) {
       setHelp({
         title: '로그인이 필요합니다',
@@ -197,8 +259,15 @@ export default function Advanced() {
   };
 
   const savePreset = async () => {
+    if (saving) return;
     const conditions = buildConditions();
-    if (!conditions || !presetName.trim()) return;
+    if (!conditions) return;
+    if (!presetName.trim()) {
+      setSaveOpen(false);
+      setHelp({ title: '이름을 입력해 주세요', body: '맞춤기업 기준에 사용할 이름이 필요합니다.' });
+      return;
+    }
+    setSaving(true);
     try {
       const response = await api<{ presetId: number }>(
         presetId ? `/presets/${presetId}` : '/presets',
@@ -220,13 +289,19 @@ export default function Advanced() {
         true,
       );
       setSaveOpen(false);
-      setHelp({
-        title: presetId ? '맞춤기업 기준 수정 완료' : '프리셋 저장 완료',
-        body: '맞춤기업에서 상세 조건과 오늘의 조건 충족 기업을 확인할 수 있습니다.',
-      });
-      if (presetId) router.replace(`/presets/${response.presetId}`);
+      if (presetId) {
+        router.replace(`/presets/${response.presetId}`);
+      } else {
+        setHelp({
+          title: '프리셋 저장 완료',
+          body: '맞춤기업에서 상세 조건과 오늘의 조건 충족 기업을 확인할 수 있습니다.',
+        });
+      }
     } catch (cause: any) {
+      setSaveOpen(false);
       setHelp({ title: '저장 실패', body: cause.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -234,7 +309,13 @@ export default function Advanced() {
     <View key={metric.metric_code} style={styles.metricRow}>
       <View style={styles.metricName}>
         {showName && <Text style={styles.label}>{label ?? metric.metric_name_ko}</Text>}
-        <Text style={styles.operator}>{operatorLabels[metric.default_operator ?? 'GTE']}</Text>
+        <Text style={styles.operator}>
+          {
+            operatorLabels[
+              operatorOverrides[metric.metric_code] ?? metric.default_operator ?? 'GTE'
+            ]
+          }
+        </Text>
       </View>
       {metric.unit_type === 'BOOLEAN' ? (
         <View style={styles.booleanChoices}>
@@ -245,6 +326,8 @@ export default function Advanced() {
           ].map(([value, text]) => (
             <Pressable
               key={text}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: (values[metric.metric_code] ?? '') === value }}
               onPress={() => setValues((current) => ({ ...current, [metric.metric_code]: value }))}
               style={[
                 styles.booleanChoice,
@@ -256,19 +339,34 @@ export default function Advanced() {
           ))}
         </View>
       ) : (
-        <>
+        <View style={styles.numericInputs}>
           <Input
             accessibilityLabel={`${label ?? metric.metric_name_ko} 기준값`}
             keyboardType="numeric"
-            value={values[metric.metric_code] ?? ''}
+            value={
+              values[metric.metric_code] ??
+              (metric.metric_code === 'DEBT_RATIO' && useDebtRatio ? '100' : '')
+            }
             onChangeText={(value) =>
               setValues((current) => ({ ...current, [metric.metric_code]: value }))
             }
             placeholder="입력"
             style={styles.input}
           />
+          {operatorOverrides[metric.metric_code] === 'BETWEEN' && (
+            <Input
+              accessibilityLabel={`${label ?? metric.metric_name_ko} 범위 최댓값`}
+              keyboardType="numeric"
+              value={secondValues[metric.metric_code] ?? ''}
+              onChangeText={(value) =>
+                setSecondValues((current) => ({ ...current, [metric.metric_code]: value }))
+              }
+              placeholder="최댓값"
+              style={styles.input}
+            />
+          )}
           <Text style={styles.unit}>{unitLabels[metric.unit_type] ?? ''}</Text>
-        </>
+        </View>
       )}
     </View>
   );
@@ -283,6 +381,8 @@ export default function Advanced() {
           {(['BASIC', 'DETAIL'] as const).map((item) => (
             <Pressable
               key={item}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: mode === item }}
               onPress={() => setMode(item)}
               style={[styles.segmentItem, mode === item && styles.segmentActive]}
             >
@@ -293,14 +393,14 @@ export default function Advanced() {
           ))}
         </View>
 
-        {loading && <LoadingState label="검색 항목을 준비하고 있어요" />}
+        {(loading || presetLoading) && <LoadingState label="검색 항목을 준비하고 있어요" />}
         {loadError ? (
           <Card>
             <Text style={styles.error}>{loadError}</Text>
           </Card>
         ) : null}
 
-        {!loading && !loadError && mode === 'BASIC' && (
+        {!loading && !presetLoading && !loadError && mode === 'BASIC' && (
           <Card>
             {basicMetrics.map((item) => {
               const metric = metricMap.get(item.code);
@@ -339,7 +439,11 @@ export default function Advanced() {
                   </View>
                   <Muted>최근 3년 모두 이익을 낸 회사만 보기</Muted>
                 </View>
-                <Switch value={noLossThreeYears} onValueChange={setNoLossThreeYears} />
+                <Switch
+                  accessibilityLabel="최근 3년 연속 흑자"
+                  value={noLossThreeYears}
+                  onValueChange={setNoLossThreeYears}
+                />
               </View>
             )}
 
@@ -360,7 +464,11 @@ export default function Advanced() {
                     </View>
                     <Muted>설정한 비율 이하인 회사만 보기</Muted>
                   </View>
-                  <Switch value={useDebtRatio} onValueChange={setUseDebtRatio} />
+                  <Switch
+                    accessibilityLabel="부채비율 제한"
+                    value={useDebtRatio}
+                    onValueChange={setUseDebtRatio}
+                  />
                 </View>
                 {useDebtRatio && metricInput(metricMap.get('DEBT_RATIO')!, '부채비율', false)}
               </View>
@@ -368,7 +476,7 @@ export default function Advanced() {
           </Card>
         )}
 
-        {!loading && !loadError && mode === 'DETAIL' && (
+        {!loading && !presetLoading && !loadError && mode === 'DETAIL' && (
           <View style={styles.categoryList}>
             <Muted>
               원하는 항목에만 숫자를 입력하세요. 비워둔 항목은 검색에 사용하지 않습니다.
@@ -396,10 +504,15 @@ export default function Advanced() {
           </View>
         )}
 
-        <Button title="회사 찾기" onPress={search} />
+        <Button
+          title="회사 찾기"
+          disabled={loading || presetLoading || Boolean(loadError)}
+          onPress={search}
+        />
         <Button
           title={presetId ? '맞춤기업 기준 수정' : '이 조건을 프리셋으로 저장'}
           secondary
+          disabled={loading || presetLoading || Boolean(loadError)}
           onPress={openSave}
         />
       </Page>
@@ -435,8 +548,12 @@ export default function Advanced() {
               onChangeText={setPresetName}
               placeholder="프리셋 이름"
             />
-            <Button title={presetId ? '수정 저장' : '저장'} onPress={savePreset} />
-            <Button title="취소" secondary onPress={() => setSaveOpen(false)} />
+            <Button
+              title={saving ? '저장 중…' : presetId ? '수정 저장' : '저장'}
+              disabled={saving}
+              onPress={savePreset}
+            />
+            <Button title="취소" disabled={saving} secondary onPress={() => setSaveOpen(false)} />
           </Card>
         </View>
       </Modal>
@@ -484,13 +601,15 @@ const styles = StyleSheet.create({
   infoText: { color: palette.muted, fontSize: 13, fontWeight: '800' },
   metricRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: palette.line,
   },
-  metricName: { flex: 1, minWidth: 0 },
+  metricName: { flex: 1, minWidth: 100 },
+  numericInputs: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   label: { fontSize: 15, fontWeight: '700', color: palette.text },
   operator: { fontSize: 12, color: palette.muted, marginTop: 3 },
   input: { width: 100 },

@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, H1, LoadingState, Muted, Page, palette } from '../components/ui';
 import { PersistentTabBar } from '../components/PersistentTabBar';
 import { PriceDataNotice } from '../components/PriceDataNotice';
 import { runScreening, ScreenResult } from '../lib/api';
+import { InlineBanner } from '../ads/InlineBanner';
 
 const operatorLabels: Record<string, string> = {
   LTE: '이하',
@@ -49,30 +50,34 @@ export default function Results() {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         setError(null);
         setData(null);
         const conditions = params.conditions ? JSON.parse(params.conditions) : undefined;
         const exchangeCodes = params.exchanges ? JSON.parse(params.exchanges) : undefined;
-        setData(
-          await runScreening({
+        const result = await runScreening({
             strategyCode: params.strategy,
             conditions,
             exchangeCodes,
             limit: 50,
-          }),
-        );
+          });
+        if (active) setData(result);
       } catch (e: any) {
-        setError(e.message ?? String(e));
+        if (active) setError(e.message ?? String(e));
       }
     })();
+    return () => { active = false; };
   }, [params.strategy, params.conditions, params.exchanges, retryCount]);
   return (
     <View style={styles.screen}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Page>
-          <H1>검색 결과</H1>
+          <Pressable accessibilityRole="button" accessibilityLabel="이전 화면으로" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={styles.backRow}>
+            <Ionicons name="arrow-back" size={22} color={palette.text} />
+            <Text style={styles.backText}>검색 결과</Text>
+          </Pressable>
           {!data && !error && <LoadingState label="조건에 맞는 회사를 찾고 있어요" />}
           {error ? (
             <Card>
@@ -100,7 +105,8 @@ export default function Results() {
                   <Muted>조건을 바꾸거나 나중에 다시 검색해 주세요.</Muted>
                 </Card>
               )}
-              {data.results.map((x) => (
+              {data.results.map((x, index) => (
+                <Fragment key={x.securityId}>
                 <Pressable
                   key={x.securityId}
                   accessibilityRole="button"
@@ -149,6 +155,8 @@ export default function Results() {
                     </View>
                   </Card>
                 </Pressable>
+                {index === 4 && data.results.length >= 6 && <InlineBanner placement="results" />}
+                </Fragment>
               ))}
             </>
           )}
@@ -162,6 +170,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
   scroll: { flex: 1 },
   scrollContent: { alignItems: 'center', paddingBottom: 30 },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
+  backText: { color: palette.text, fontSize: 24, fontWeight: '800' },
   counts: { flexDirection: 'row', gap: 10, width: '100%' },
   countCard: { flex: 1, minWidth: 0 },
   big: { fontSize: 24, fontWeight: '800', color: palette.text },

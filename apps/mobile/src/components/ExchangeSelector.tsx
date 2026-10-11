@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { Card, Muted, palette } from './ui';
 
 export const exchangeOptions = [
@@ -29,7 +29,13 @@ export function ExchangeSelector({
     <Card style={styles.card}>
       <Text style={styles.title}>검색 시장</Text>
       <Muted>한 곳 이상 선택하세요.</Muted>
-      <View style={styles.row}>
+      <ScrollView
+        horizontal
+        testID="exchange-scroll"
+        showsHorizontalScrollIndicator={false}
+        style={styles.scroll}
+        contentContainerStyle={styles.row}
+      >
         {exchangeOptions.map((exchange) => {
           const active = selected.includes(exchange.code);
           return (
@@ -44,7 +50,7 @@ export function ExchangeSelector({
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
     </Card>
   );
 }
@@ -52,8 +58,10 @@ export function ExchangeSelector({
 const styles = StyleSheet.create({
   card: { gap: 8 },
   title: { color: palette.text, fontSize: 16, fontWeight: '900' },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  scroll: { width: '100%', flexGrow: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingRight: 2 },
   chip: {
+    flexShrink: 0,
     borderWidth: 1,
     borderColor: palette.line,
     borderRadius: 999,

@@ -6,14 +6,26 @@ const BASE =
     : (process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:3000/api');
 
 async function request(path: string, init?: RequestInit, access?: string | null) {
-  return fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(access ? { Authorization: `Bearer ${access}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    return await fetch(`${BASE}${path}`, {
+      signal: init?.signal ?? controller.signal,
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(access ? { Authorization: `Bearer ${access}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error('연결이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    throw new Error(userMessage(error));
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function userMessage(error: unknown) {
@@ -24,37 +36,71 @@ function userMessage(error: unknown) {
   return message;
 }
 
-export async function api<T>(path: string, init?: RequestInit, authenticated = false): Promise<T> {
-  let access = authenticated ? await getAccess() : null;
-  let response: Response;
-  try {
-    response = await request(path, init, access);
-  } catch (error) {
-    throw new Error(userMessage(error));
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
   }
+}
+
+async function responseError(response: Response, authenticated: boolean) {
   if (authenticated && response.status === 401) {
-    const refresh = await getRefresh();
-    if (refresh) {
-      const rr = await request('/auth/refresh', {
-        method: 'POST',
-        body: JSON.stringify({ refreshToken: refresh }),
-      });
-      if (rr.ok) {
-        const tokens = await rr.json();
-        await saveTokens(tokens);
-        access = tokens.accessToken;
-        response = await request(path, init, access);
-      } else await clearTokens();
+    return new ApiError('로그인이 만료되었습니다. 다시 로그인해 주세요.', 401);
+  }
+  let message: any = '요청 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+  try {
+    const body = await response.json();
+    message = body.message ?? message;
+  } catch {}
+  return new ApiError(
+    Array.isArray(message) ? message.join(', ') : String(message),
+    response.status,
+  );
+}
+
+let refreshing: Promise<string | null> | null = null;
+
+function refreshAccess(expiredAccess: string | null) {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    const currentAccess = await getAccess();
+    if (currentAccess !== expiredAccess) return currentAccess;
+    const refreshToken = await getRefresh();
+    if (!refreshToken) {
+      if (currentAccess) await clearTokens(null);
+      return null;
     }
+    const response = await request('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        await clearTokens(refreshToken);
+      }
+      throw await responseError(response, true);
+    }
+    const tokens = await response.json();
+    await saveTokens(tokens, refreshToken);
+    return getAccess();
+  })().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
+export async function api<T>(path: string, init?: RequestInit, authenticated = false): Promise<T> {
+  const access = authenticated ? await getAccess() : null;
+  let response = await request(path, init, access);
+  if (authenticated && response.status === 401) {
+    const refreshedAccess = await refreshAccess(access);
+    if (refreshedAccess) response = await request(path, init, refreshedAccess);
   }
-  if (!response.ok) {
-    let message: any = '요청 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.';
-    try {
-      const body = await response.json();
-      message = body.message ?? message;
-    } catch {}
-    throw new Error(Array.isArray(message) ? message.join(', ') : String(message));
-  }
+  if (!response.ok) throw await responseError(response, authenticated);
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 

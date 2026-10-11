@@ -1,5 +1,7 @@
 import React from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSegments } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Animated,
   Platform,
@@ -25,8 +27,21 @@ function withoutEmptyText(children: React.ReactNode) {
   return React.Children.toArray(children).filter((child) => child !== '');
 }
 export function Page({ children, style, ...props }: ViewProps) {
+  const insets = useSafeAreaInsets();
+  const segments = useSegments();
+  const hasNativeHeader = segments[0] !== '(tabs)' && segments[0] !== 'results';
   return (
-    <View {...props} style={[styles.page, style]}>
+    <View
+      {...props}
+      style={[
+        styles.page,
+        Platform.OS !== 'web' && {
+          paddingTop: hasNativeHeader ? 20 : Math.max(20, insets.top + 10),
+          paddingBottom: Math.max(20, insets.bottom + 10),
+        },
+        style,
+      ]}
+    >
       {withoutEmptyText(children)}
     </View>
   );
@@ -49,20 +64,25 @@ export function Button({
   onPress,
   secondary = false,
   danger = false,
+  disabled = false,
 }: {
   title: string;
   onPress: () => void;
   secondary?: boolean;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
         secondary && styles.buttonSecondary,
         danger && styles.buttonDanger,
+        disabled && styles.buttonDisabled,
         pressed && styles.buttonPressed,
       ]}
     >
@@ -174,6 +194,7 @@ const styles = StyleSheet.create({
   buttonDanger: { backgroundColor: '#FFF5F5', borderWidth: 1, borderColor: '#D94C4C' },
   buttonDangerText: { color: '#B42318' },
   buttonPressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
+  buttonDisabled: { opacity: 0.5 },
   buttonText: { color: 'white', fontWeight: '700', fontSize: 15 },
   input: {
     height: 48,

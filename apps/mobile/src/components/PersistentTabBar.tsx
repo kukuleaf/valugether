@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { palette } from './ui';
 
@@ -12,8 +13,9 @@ const items = [
 ] as const;
 
 export function PersistentTabBar() {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { height: 59 + Math.max(insets.bottom, 7), paddingBottom: Math.max(insets.bottom, 7) }]}>
       {items.map((item) => (
         <Pressable
           key={item.path}

@@ -2,17 +2,27 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { ComponentProps, useEffect, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Page, palette } from '../../components/ui';
 import { defaultExchangeCodes, ExchangeSelector } from '../../components/ExchangeSelector';
 import { api } from '../../lib/api';
+import { InlineBanner } from '../../ads/InlineBanner';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type StrategyCardModel = {
   code: string;
   name: string;
   short: string;
-  conditions: string;
   icon: IconName;
   background: string;
   iconColor: string;
@@ -22,14 +32,6 @@ type ApiStrategy = {
   strategy_name: string;
   description: string | null;
   display_order: number;
-  conditions: Array<{
-    metricCode: string;
-    metricName: string;
-    unitType: string;
-    operator: 'LTE' | 'LT' | 'GTE' | 'GT' | 'EQ' | 'BETWEEN';
-    target: number;
-    target2?: number;
-  }>;
 };
 type Notice = {
   notice_id: number;
@@ -58,7 +60,6 @@ const fallbackStrategies: StrategyCardModel[] = [
     code: 'UNDERVALUED',
     name: '저평가 기업',
     short: '가치보다 가격이 낮은 회사',
-    conditions: 'PER ≤ 15 · PBR ≤ 1.5 · ROE ≥ 8%',
     icon: 'pricetag-outline',
     background: '#E8F2FF',
     iconColor: '#246BCE',
@@ -67,7 +68,6 @@ const fallbackStrategies: StrategyCardModel[] = [
     code: 'STABLE',
     name: '안정적인 기업',
     short: '재무가 튼튼한 회사',
-    conditions: '부채 ≤ 100% · 유동 ≥ 1.2배 · FCF ≥ 0 · 3년 흑자',
     icon: 'shield-checkmark-outline',
     background: '#E4F7F1',
     iconColor: '#16876C',
@@ -76,7 +76,6 @@ const fallbackStrategies: StrategyCardModel[] = [
     code: 'GROWTH',
     name: '성장하는 기업',
     short: '매출과 이익이 크는 회사',
-    conditions: '매출 성장 ≥ 5% · EPS 성장 ≥ 5% · ROE ≥ 10%',
     icon: 'trending-up-outline',
     background: '#F0EBFF',
     iconColor: '#7251C7',
@@ -85,7 +84,6 @@ const fallbackStrategies: StrategyCardModel[] = [
     code: 'DIVIDEND',
     name: '배당 기업',
     short: '배당을 꾸준히 주는 회사',
-    conditions: '배당률 ≥ 2% · 3년 연속 · 배당성향 ≤ 70% · 흑자',
     icon: 'cash-outline',
     background: '#FFF2D8',
     iconColor: '#A76A00',
@@ -93,6 +91,8 @@ const fallbackStrategies: StrategyCardModel[] = [
 ];
 
 export default function Home() {
+  const { width } = useWindowDimensions();
+  const heroTitleFontSize = Math.min(24, Math.max(18, (width - 84) / 12));
   const [exchangeCodes, setExchangeCodes] = useState<string[]>(defaultExchangeCodes);
   const [strategies, setStrategies] = useState<StrategyCardModel[]>(fallbackStrategies);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -114,7 +114,6 @@ export default function Home() {
             code: item.strategy_code,
             name: item.strategy_name,
             short: item.description ?? '',
-            conditions: item.conditions.map(formatCondition).join(' · '),
             ...(strategyVisuals[item.strategy_code] ?? defaultVisual),
           })),
         );
@@ -142,12 +141,24 @@ export default function Home() {
           <LinearGradient colors={['#123E58', '#176B87', '#1A967D']} style={styles.hero}>
             <View style={styles.heroGlow} />
             <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <Ionicons name="leaf" size={19} color="#123E58" />
-              </View>
+              <Image
+                source={require('../../../assets/brand-mark.png')}
+                style={styles.brandIcon}
+                accessibilityLabel="가치보는주식 로고"
+              />
               <Text style={styles.brand}>가치보는주식</Text>
             </View>
-            <Text style={styles.heroTitle}>숫자로 확인하는{String.fromCharCode(10)}좋은 기업</Text>
+            <Text
+              style={[
+                styles.heroTitle,
+                { fontSize: heroTitleFontSize, lineHeight: heroTitleFontSize * 1.35 },
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              숨겨진 가치, 현명한 투자
+            </Text>
+            <Text style={styles.heroSubtitle}>1만 원짜리 기업을 5천 원에 사는 방법</Text>
             <View style={styles.heroBadge}>
               <Ionicons name="compass-outline" size={24} color="#D9FFF4" />
               <Text style={styles.heroBadgeText}>내 기준에 맞는 기업 찾기&nbsp;</Text>
@@ -200,6 +211,7 @@ export default function Home() {
           <Ionicons name="chevron-forward" size={21} color={palette.muted} />
         </Pressable>
 
+        <InlineBanner placement="home" />
         <View style={styles.notice}>
           <Ionicons name="information-circle-outline" size={18} color={palette.muted} />
           <Text style={styles.noticeText}>
@@ -270,7 +282,6 @@ function StrategyCard({
         </View>
         <Text style={styles.strategyTitle}>{strategy.name}</Text>
         <Text style={styles.strategyDescription}>{strategy.short}</Text>
-        <Text style={styles.strategyConditions}>{strategy.conditions}</Text>
         <View style={styles.exploreRow}>
           <Text style={[styles.exploreText, { color: strategy.iconColor }]}>살펴보기</Text>
           <Ionicons name="arrow-forward" size={15} color={strategy.iconColor} />
@@ -280,26 +291,10 @@ function StrategyCard({
   );
 }
 
-function formatCondition(condition: ApiStrategy['conditions'][number]) {
-  const signs = { LTE: '≤', LT: '<', GTE: '≥', GT: '>', EQ: '=', BETWEEN: '~' };
-  const unit =
-    condition.unitType === 'PERCENT'
-      ? '%'
-      : condition.unitType === 'RATIO'
-        ? '배'
-        : condition.unitType === 'BOOLEAN'
-          ? ''
-          : '';
-  if (condition.operator === 'BETWEEN') {
-    return `${condition.metricName} ${condition.target}${unit}~${condition.target2 ?? ''}${unit}`;
-  }
-  return `${condition.metricName} ${signs[condition.operator]} ${condition.target}${unit}`;
-}
-
 const styles = StyleSheet.create({
   screen: { backgroundColor: palette.bg },
   scrollContent: { paddingBottom: 30 },
-  page: { paddingTop: 14 },
+  page: Platform.OS === 'web' ? { paddingTop: 14 } : {},
   hero: {
     minHeight: 235,
     overflow: 'hidden',
@@ -329,20 +324,20 @@ const styles = StyleSheet.create({
   brandIcon: {
     width: 34,
     height: 34,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#D9FFF4',
+    borderRadius: 10,
   },
   brand: { color: '#D9FFF4', fontWeight: '800', fontSize: 14, letterSpacing: 0.2 },
   heroTitle: {
     color: 'white',
-    fontSize: 30,
-    lineHeight: 39,
     fontWeight: '900',
     marginTop: 18,
-    transform: [{ scaleX: 1.07 }],
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
+  },
+  heroSubtitle: {
+    color: '#D9FFF4',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
   },
   heroBadge: {
     alignSelf: 'flex-start',
@@ -396,7 +391,6 @@ const styles = StyleSheet.create({
   },
   strategyTitle: { color: palette.text, fontSize: 16, fontWeight: '900' },
   strategyDescription: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 5 },
-  strategyConditions: { color: palette.text, fontSize: 11, lineHeight: 17, marginTop: 8 },
   exploreRow: {
     flexDirection: 'row',
     alignItems: 'center',
