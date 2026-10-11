@@ -48,6 +48,7 @@ test.describe.serial('admin browser', () => {
     await page.getByPlaceholder('password').fill(TEST_PASSWORD);
     await page.getByRole('button', { name: '로그인' }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByText('가치보는주식', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 
     const pages: Array<[string, string]> = [
@@ -62,6 +63,7 @@ test.describe.serial('admin browser', () => {
       await page.getByRole('link', { name: link }).click();
       await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     }
+    await expect(page.getByRole('cell', { name: '서비스 이용약관 (검토 초안)' })).toBeVisible();
 
     await page.getByRole('link', { name: '공지 관리' }).click();
     await expect(page.getByRole('heading', { name: '공지 관리' })).toBeVisible();

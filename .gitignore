@@ -10,5 +10,8 @@ playwright-report/
 test-results/
 .cache/
 *.log
+credentials.json
+*.jks
+*.keystore
 .DS_Store
 .vscode/settings.json

@@ -57,7 +57,7 @@ export class RateLimitService implements OnModuleDestroy {
         const raw = (await this.redis.eval(
           REDIS_SCRIPT,
           1,
-          `right-stock:rate-limit:${key}`,
+          `valugether:rate-limit:${key}`,
           windowSeconds,
         )) as [number, number];
         return this.result(Number(raw[0]), limit, Math.max(1, Number(raw[1])));

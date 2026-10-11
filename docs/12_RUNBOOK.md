@@ -33,7 +33,7 @@ psql -h localhost -p 5433 -U postgres -d postgres -f database/sql/00_create_data
 그 후:
 
 ```bash
-for f in database/sql/{0[1-9],1[0-3]}_*.sql; do
+for f in database/sql/{0[1-9],1[0-6]}_*.sql; do
   psql -h localhost -p 5433 -U stock_app -d stock_screener -f "$f"
 done
 ```
@@ -109,7 +109,7 @@ Redis가 정상 실행 중인지 먼저 확인하고 API 환경변수를 설정�
 
 ```env
 BATCH_WORKER_ENABLED=true
-BATCH_QUEUE_NAME=right-stock-batch
+BATCH_QUEUE_NAME=valugether-batch
 BATCH_REDIS_STARTUP_TIMEOUT_MS=10000
 FINANCIAL_SYNC_CHUNK_SIZE=200
 REDIS_URL=redis://localhost:6379
@@ -178,8 +178,8 @@ SMTP_HOST=127.0.0.1
 SMTP_PORT=1025
 SMTP_SECURE=false
 MAIL_FROM=no-reply@example.local
-EMAIL_VERIFICATION_URL=rightstockvalue://auth/verify-email
-PASSWORD_RESET_URL=rightstockvalue://auth/reset-password
+EMAIL_VERIFICATION_URL=valugether://auth/verify-email
+PASSWORD_RESET_URL=valugether://auth/reset-password
 ```
 
 메일은 `http://localhost:8025`에서 확인합니다. Windows에서 `localhost`가 IPv6로 해석되어
@@ -195,7 +195,7 @@ SMTP_SECURE=true
 SMTP_USER=resend
 SMTP_PASSWORD=                     # Resend API key; Git/문서 기록 금지
 MAIL_FROM=onboarding@resend.dev    # 도메인 등록 전 계정 소유자 테스트 전용
-PRESET_ALERT_URL=rightstockvalue://custom
+PRESET_ALERT_URL=valugether://custom
 PRESET_ALERT_EMAIL_ENABLED=false   # 도메인 인증 뒤 true
 ```
 

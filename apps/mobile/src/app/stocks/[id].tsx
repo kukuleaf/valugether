@@ -3,8 +3,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Card, LoadingState, Muted, Page, palette } from '../../components/ui';
+import { Button, Card, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { PersistentTabBar } from '../../components/PersistentTabBar';
+import { PriceDataNotice, PriceStatus } from '../../components/PriceDataNotice';
 import { api } from '../../lib/api';
 
 type MetricHistory = {
@@ -99,6 +100,7 @@ type StockDetail = {
   exchange_currency_code: string;
   timezone_name: string;
   latest_price: Price | null;
+  price_status: PriceStatus;
   price_history: Price[];
   metrics: Metric[];
   dividends: Dividend[];
@@ -143,6 +145,7 @@ export default function StockDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [stock, setStock] = useState<StockDetail | null>(null);
   const [error, setError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [profileOpen, setProfileOpen] = useState(false);
   const [periodMode, setPeriodMode] = useState<PeriodMode>('QUARTER');
@@ -154,10 +157,12 @@ export default function StockDetailScreen() {
   const [chartError, setChartError] = useState('');
 
   useEffect(() => {
+    setStock(null);
+    setError('');
     api<StockDetail>(`/stocks/${id}`)
       .then(setStock)
       .catch(() => setError('기업정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'));
-  }, [id]);
+  }, [id, retryCount]);
 
   useEffect(() => {
     if (!priceChartOpen) return;
@@ -198,6 +203,7 @@ export default function StockDetailScreen() {
         <Page>
           <Card>
             <Text style={styles.error}>{error}</Text>
+            <Button title="다시 불러오기" onPress={() => setRetryCount((count) => count + 1)} />
           </Card>
         </Page>
         <PersistentTabBar />
@@ -244,7 +250,8 @@ export default function StockDetailScreen() {
                 {money(stock.latest_price.close_price, stock.latest_price.currency_code)}
               </Text>
             )}
-            {change && (
+            {!stock.latest_price && <Text style={styles.heroPrice}>시세 정보 없음</Text>}
+            {change && stock.price_status === 'CURRENT' && (
               <Text style={[styles.heroChange, change.positive ? styles.rise : styles.fall]}>
                 {change.label}
               </Text>
@@ -256,6 +263,10 @@ export default function StockDetailScreen() {
               </Text>
             </View>
           </LinearGradient>
+          <PriceDataNotice
+            status={stock.price_status}
+            asOfDate={stock.latest_price?.trade_date ?? null}
+          />
 
           <View style={styles.tabBar}>
             {tabs.map((tab) => (
@@ -317,7 +328,7 @@ export default function StockDetailScreen() {
                 ))}
               </ExpandableCard>
 
-              {stock.latest_price && (
+              {stock.latest_price ? (
                 <Card>
                   <SectionHeader icon="pulse-outline" title="최근 주가" />
                   <View style={styles.priceHeadline}>
@@ -342,6 +353,11 @@ export default function StockDetailScreen() {
                       <Ionicons name="stats-chart" size={17} color={palette.accent} />
                     </Pressable>
                   )}
+                </Card>
+              ) : (
+                <Card>
+                  <SectionHeader icon="pulse-outline" title="최근 주가" />
+                  <Muted>수집된 시세가 없습니다. 재무정보는 계속 볼 수 있습니다.</Muted>
                 </Card>
               )}
             </>

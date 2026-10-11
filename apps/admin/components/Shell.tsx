@@ -15,7 +15,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand">바른주식 밸류</div>
+        <div className="brand">가치보는주식</div>
         <nav className="nav">
           {links.map(([href, label]) => (
             <Link key={href} href={href}>

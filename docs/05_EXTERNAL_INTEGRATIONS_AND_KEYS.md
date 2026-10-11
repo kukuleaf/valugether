@@ -26,7 +26,7 @@ TODO:
 - 문서: https://www.sec.gov/search-filings/edgar-application-programming-interfaces
 - API Key: 없음
 - 필수 환경변수: `SEC_USER_AGENT`
-- 예: `StockScreener/0.1 contact@example.com`
+- 예: `Valugether/0.1 contact@example.com`
 - 용도: submissions, companyfacts, nightly bulk data
 
 TODO:
@@ -125,17 +125,28 @@ EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=
 
 필요:
 
-- [ ] 앱 생성
-- [ ] Android 플랫폼 등록
-- [ ] Redirect URI
-- [ ] 동의항목 최소화
+- [x] 앱 생성, 카카오 로그인·OIDC 활성화 (사용자 확인)
+- [x] Android 네이티브 앱 키에 `com.valugether.app`과 EAS preview 키 해시 등록 (사용자 확인)
+- [ ] Android 실기기 로그인 검증: 모바일/API 양쪽에 동일한 네이티브 앱 키 설정 후 새 APK 빌드
+- [ ] 동의항목 최소화. 이메일은 선택 정보이며 소셜 가입에 필수로 요구하지 않음
+- [ ] 외부 연결 해제 웹훅: 공개 HTTPS API와 수신 검증 구현 후 등록
+- [ ] Play App Signing 배포 인증서의 별도 키 해시 등록
 
 환경변수:
 
 ```text
-KAKAO_REST_API_KEY=
-KAKAO_CLIENT_SECRET=
+KAKAO_NATIVE_APP_KEY=                # API: ID 토큰 aud 검증용
+EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY=    # 모바일: 네이티브 앱 키, EAS 빌드에도 등록
+KAKAO_REST_API_KEY=                  # 향후 REST API 방식 사용 시
+KAKAO_CLIENT_SECRET=                 # 향후 REST API 방식 사용 시
 ```
+
+현재 구현은 Android 네이티브 SDK와 OIDC ID 토큰 검증 방식이다. REST API 리다이렉트 URI는
+이 방식에 필요하지 않으므로 임의 주소를 등록하지 않는다. Expo Go가 아닌 새 네이티브
+development/preview 빌드가 필요하다. 최초 가입은 서비스 약관 동의를 받은 뒤 생성하고,
+카카오 제공 이메일이 없어도 provider 회원번호로 계정을 만든다. 이메일 인증·비밀번호
+재설정 메일은 간편 로그인에 적용하지 않는다. 카카오 계정 재인증 탈퇴·연결 해제는
+구현했지만 실제 기기 검증과 외부 연결 해제 웹훅은 남았다.
 
 ### Naver
 
@@ -203,9 +214,9 @@ SMTP_SECURE=
 SMTP_USER=
 SMTP_PASSWORD=
 MAIL_FROM=
-EMAIL_VERIFICATION_URL=rightstockvalue://auth/verify-email
-PASSWORD_RESET_URL=rightstockvalue://auth/reset-password
-PRESET_ALERT_URL=rightstockvalue://custom
+EMAIL_VERIFICATION_URL=valugether://auth/verify-email
+PASSWORD_RESET_URL=valugether://auth/reset-password
+PRESET_ALERT_URL=valugether://custom
 PRESET_ALERT_EMAIL_ENABLED=false
 ```
 

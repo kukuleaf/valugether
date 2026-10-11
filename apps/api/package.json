@@ -1,5 +1,5 @@
 {
-  "name": "@stock-screener/api",
+  "name": "@valugether/api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "nest build",
     "typecheck": "tsc --noEmit",
     "test:e2e": "npm run build --silent && node --env-file=.env --test --test-concurrency=1 test/api.e2e.mjs",
+    "test:kakao": "npm run build --silent && node --env-file=.env --test --test-concurrency=1 test/kakao-oidc.unit.mjs test/kakao-auth.e2e.mjs",
     "test:batch": "npm run build --silent && node --env-file=.env --test --test-concurrency=1 test/market-price.e2e.mjs",
     "test:queue": "npm run build --silent && node ../../tools/run-queue-e2e.mjs",
     "create-admin": "tsx scripts/create-admin.ts",
@@ -28,6 +29,7 @@
     "exceljs": "^4.4.0",
     "helmet": "^8.1.0",
     "ioredis": "^6.0.0",
+    "jose": "^5.10.0",
     "nodemailer": "^10.0.10",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",

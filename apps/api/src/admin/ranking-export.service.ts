@@ -48,7 +48,7 @@ export class RankingExportService {
     ]);
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Right Stock Value';
+    workbook.creator = 'Valugether';
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.calcProperties.fullCalcOnLoad = true;

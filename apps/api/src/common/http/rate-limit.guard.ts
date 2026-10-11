@@ -28,6 +28,8 @@ type Policy = {
 const AUTH_PATHS = new Set([
   '/auth/register',
   '/auth/login',
+  '/auth/kakao/nonce',
+  '/auth/kakao/login',
   '/auth/refresh',
   '/auth/email-verification/request',
   '/auth/email-verification/confirm',

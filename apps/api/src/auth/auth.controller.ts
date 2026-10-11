@@ -9,6 +9,7 @@ import {
   RefreshDto,
   RegisterDto,
   TokenConfirmDto,
+  KakaoLoginDto,
 } from './auth.dto';
 import { AccessTokenGuard } from './access-token.guard';
 
@@ -20,6 +21,12 @@ export class AuthController {
   }
   @Post('login') login(@Body() dto: LoginDto) {
     return this.auth.login(dto.email, dto.password);
+  }
+  @Post('kakao/nonce') kakaoNonce() {
+    return this.auth.createKakaoNonce();
+  }
+  @Post('kakao/login') kakaoLogin(@Body() dto: KakaoLoginDto) {
+    return this.auth.kakaoLogin(dto.idToken, dto.nonce, dto.consents);
   }
   @Post('refresh') refresh(@Body() dto: RefreshDto) {
     return this.auth.refresh(dto.refreshToken);
@@ -47,6 +54,6 @@ export class AuthController {
   @Delete('me')
   @UseGuards(AccessTokenGuard)
   deleteAccount(@Req() req: any, @Body() dto: DeleteAccountDto) {
-    return this.auth.deleteAccount(req.user.sub, dto.password);
+    return this.auth.deleteAccount(req.user.sub, dto);
   }
 }

@@ -1,4 +1,4 @@
-바른주식 밸류 (Right Stock Value) v0.1
+가치보는주식 (Valugether) v0.1
 
 Files: 142
 

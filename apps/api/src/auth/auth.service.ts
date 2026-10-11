@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -15,7 +16,8 @@ import { DB_POOL } from '../common/database/database.module';
 import { MailService } from '../common/mail/mail.service';
 import { AuditService } from '../audit/audit.service';
 import { hashToken, newOpaqueToken } from './token.util';
-import { ConsentDto } from './auth.dto';
+import { ConsentDto, DeleteAccountDto } from './auth.dto';
+import { KakaoIdentity, KakaoOidcService } from './kakao-oidc.service';
 
 @Injectable()
 export class AuthService {
@@ -27,6 +29,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly audit: AuditService,
     private readonly mail: MailService,
+    private readonly kakao: KakaoOidcService,
   ) {}
 
   async register(email: string, password: string, consents: ConsentDto[]) {
@@ -146,6 +149,119 @@ export class AuthService {
       targetId: row.user_id,
     });
     return this.issueTokens(row.user_id, row.roles);
+  }
+
+  async createKakaoNonce() {
+    if (!this.config.get<string>('KAKAO_NATIVE_APP_KEY')?.trim()) {
+      throw new ServiceUnavailableException('카카오 로그인이 설정되지 않았습니다.');
+    }
+    const nonce = newOpaqueToken();
+    await this.db.query("delete from social_login_nonce where expires_at < now()-interval '1 day'");
+    await this.db.query(
+      `insert into social_login_nonce(nonce_hash,provider_code,expires_at)
+       values($1,'KAKAO',now()+interval '15 minutes')`,
+      [hashToken(nonce)],
+    );
+    return { nonce };
+  }
+
+  async kakaoLogin(idToken: string, nonce: string, consents?: ConsentDto[]) {
+    const nonceHash = hashToken(nonce);
+    const challenge = await this.db.query(
+      `select 1 from social_login_nonce
+       where nonce_hash=$1 and provider_code='KAKAO' and used_at is null and expires_at>now()`,
+      [nonceHash],
+    );
+    if (!challenge.rowCount)
+      throw new UnauthorizedException('카카오 로그인 요청이 만료되었습니다.');
+    const identity = await this.kakao.verify(idToken, nonce);
+    const client = await this.db.connect();
+    let userId: string;
+    let created = false;
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        `social:KAKAO:${identity.subject}`,
+      ]);
+      const lockedNonce = await client.query(
+        `select 1 from social_login_nonce
+         where nonce_hash=$1 and provider_code='KAKAO' and used_at is null and expires_at>now()
+         for update`,
+        [nonceHash],
+      );
+      if (!lockedNonce.rowCount)
+        throw new UnauthorizedException('카카오 로그인 요청이 만료되었습니다.');
+
+      const linked = await client.query(
+        `select u.user_id,u.status_code
+         from user_social_account sa join app_user u on u.user_id=sa.user_id
+         where sa.provider_code='KAKAO' and sa.provider_subject=$1 and u.deleted_at is null
+         for update of u,sa`,
+        [identity.subject],
+      );
+      if (linked.rowCount) {
+        if (linked.rows[0].status_code !== 'ACTIVE') {
+          throw new UnauthorizedException('사용할 수 없는 계정입니다.');
+        }
+        userId = linked.rows[0].user_id;
+        await client.query(
+          `update user_social_account set provider_email=$2,updated_at=now()
+           where provider_code='KAKAO' and provider_subject=$1`,
+          [identity.subject, identity.email],
+        );
+        await client.query(
+          'update app_user set last_login_at=now(),updated_at=now() where user_id=$1',
+          [userId],
+        );
+      } else {
+        if (!consents) {
+          await client.query('rollback');
+          return { consentRequired: true };
+        }
+        const activeTerms = await this.validateSocialConsents(client, consents);
+        const user = await client.query(
+          `insert into app_user(email,status_code,last_login_at)
+           values(null,'ACTIVE',now()) returning user_id`,
+        );
+        userId = user.rows[0].user_id;
+        await client.query(
+          `insert into user_social_account(user_id,provider_code,provider_subject,provider_email)
+           values($1,'KAKAO',$2,$3)`,
+          [userId, identity.subject, identity.email],
+        );
+        await client.query("insert into user_role(user_id,role_code) values ($1,'USER')", [userId]);
+        const answers = new Map(consents.map((item) => [item.termId, item.agreed]));
+        for (const term of activeTerms) {
+          const termId = Number(term.term_id);
+          await client.query(
+            `insert into user_consent(user_id,consent_type,version,agreed,term_id)
+             values($1,$2,$3,$4,$5)`,
+            [userId, term.term_code, term.version, answers.get(termId) ?? false, termId],
+          );
+        }
+        await client.query(
+          "insert into watchlist(user_id,watchlist_name,is_default) values ($1,'관심종목',true)",
+          [userId],
+        );
+        created = true;
+      }
+      await client.query('update social_login_nonce set used_at=now() where nonce_hash=$1', [
+        nonceHash,
+      ]);
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+    await this.audit.write({
+      actorUserId: userId,
+      actionCode: created ? 'AUTH_REGISTER' : 'AUTH_LOGIN_SUCCESS',
+      targetType: 'USER',
+      targetId: userId,
+    });
+    return this.issueTokens(userId, await this.loadRoles(userId));
   }
 
   async refresh(refreshToken: string) {
@@ -319,7 +435,14 @@ export class AuthService {
     return { ok: true };
   }
 
-  async deleteAccount(userId: string, password?: string) {
+  async deleteAccount(userId: string, dto: DeleteAccountDto) {
+    let kakaoIdentity: KakaoIdentity | null = null;
+    if (dto.kakaoIdToken && dto.kakaoNonce) {
+      kakaoIdentity = await this.kakao.verify(dto.kakaoIdToken, dto.kakaoNonce);
+      if (Math.abs(Date.now() / 1000 - kakaoIdentity.authenticatedAt) > 10 * 60) {
+        throw new UnauthorizedException('카카오 계정으로 다시 인증해 주세요.');
+      }
+    }
     const client = await this.db.connect();
     try {
       await client.query('begin');
@@ -334,16 +457,28 @@ export class AuthService {
       );
       const row = account.rows[0];
       if (!row) throw new UnauthorizedException('사용자 정보를 찾을 수 없습니다.');
-      if (!row.password_hash) {
-        if (row.has_social) {
-          throw new BadRequestException(
-            '간편 로그인 계정은 provider 재인증 기능 연결 후 탈퇴할 수 있습니다.',
-          );
+      if (row.password_hash) {
+        if (!dto.password || !(await argon2.verify(row.password_hash, dto.password))) {
+          throw new UnauthorizedException('현재 비밀번호를 확인하세요.');
         }
-        throw new UnauthorizedException('유효한 인증수단을 찾을 수 없습니다.');
-      }
-      if (!password || !(await argon2.verify(row.password_hash, password))) {
-        throw new UnauthorizedException('현재 비밀번호를 확인하세요.');
+      } else {
+        if (!row.has_social || !kakaoIdentity || !dto.kakaoAccessToken || !dto.kakaoNonce) {
+          throw new UnauthorizedException('카카오 계정으로 다시 인증해 주세요.');
+        }
+        const social = await client.query(
+          `select 1 from user_social_account
+           where user_id=$1 and provider_code='KAKAO' and provider_subject=$2`,
+          [userId, kakaoIdentity.subject],
+        );
+        if (!social.rowCount) throw new UnauthorizedException('카카오 계정이 일치하지 않습니다.');
+        const nonce = await client.query(
+          `update social_login_nonce set used_at=now()
+           where nonce_hash=$1 and provider_code='KAKAO' and used_at is null and expires_at>now()
+           returning nonce_hash`,
+          [hashToken(dto.kakaoNonce)],
+        );
+        if (!nonce.rowCount) throw new UnauthorizedException('카카오 인증 요청이 만료되었습니다.');
+        await this.kakao.unlink(dto.kakaoAccessToken, kakaoIdentity.subject);
       }
 
       const counts = (
@@ -388,6 +523,8 @@ export class AuthService {
     const result = await this.db.query(
       `select u.user_id,u.email,u.status_code,u.email_verified_at,u.last_login_at,u.created_at,
               exists(select 1 from user_password pw where pw.user_id=u.user_id) has_password,
+              (select sa.provider_email from user_social_account sa
+               where sa.user_id=u.user_id and sa.provider_code='KAKAO') social_email,
               coalesce((select array_agg(sa.provider_code order by sa.provider_code)
                         from user_social_account sa where sa.user_id=u.user_id),'{}') social_providers,
               (select count(*)::int from screen_preset p where p.user_id=u.user_id) preset_count,
@@ -501,6 +638,31 @@ export class AuthService {
       [userId],
     );
     return result.rows.map((row) => row.role_code);
+  }
+
+  private async validateSocialConsents(client: PoolClient, consents: ConsentDto[]) {
+    const activeTerms = (
+      await client.query(
+        `select distinct on (term_code) term_id,term_code,version,is_required
+         from terms_document
+         where status_code='PUBLISHED' and effective_from<=now()
+         order by term_code,effective_from desc,term_id desc`,
+      )
+    ).rows;
+    if (!activeTerms.length) {
+      throw new ServiceUnavailableException('가입 약관을 불러올 수 없습니다.');
+    }
+    const answers = new Map(consents.map((item) => [item.termId, item.agreed]));
+    if (
+      activeTerms.some((term) => term.is_required && answers.get(Number(term.term_id)) !== true)
+    ) {
+      throw new BadRequestException('필수 약관에 모두 동의해 주세요.');
+    }
+    const activeIds = new Set(activeTerms.map((term) => Number(term.term_id)));
+    if (consents.some((item) => !activeIds.has(item.termId))) {
+      throw new BadRequestException('약관이 변경되었습니다. 화면을 새로 열어 다시 확인해 주세요.');
+    }
+    return activeTerms;
   }
 
   private verificationTtlMinutes() {

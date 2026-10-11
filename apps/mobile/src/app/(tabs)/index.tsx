@@ -145,7 +145,7 @@ export default function Home() {
               <View style={styles.brandIcon}>
                 <Ionicons name="leaf" size={19} color="#123E58" />
               </View>
-              <Text style={styles.brand}>바른주식 밸류</Text>
+              <Text style={styles.brand}>가치보는주식</Text>
             </View>
             <Text style={styles.heroTitle}>숫자로 확인하는{String.fromCharCode(10)}좋은 기업</Text>
             <View style={styles.heroBadge}>

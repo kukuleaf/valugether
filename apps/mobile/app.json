@@ -1,17 +1,23 @@
 {
   "expo": {
-    "name": "바른주식 밸류",
-    "slug": "right-stock-value",
+    "name": "가치보는주식",
+    "slug": "valugether",
+    "owner": "kukuleaf",
     "version": "0.1.0",
     "orientation": "portrait",
-    "scheme": "rightstockvalue",
+    "scheme": "valugether",
     "userInterfaceStyle": "light",
     "android": {
-      "package": "com.example.stockscreener",
+      "package": "com.valugether.app",
       "adaptiveIcon": {
         "backgroundColor": "#F5F7FA"
       }
     },
-    "plugins": ["expo-router", "expo-status-bar", "expo-secure-store"]
+    "plugins": ["expo-router", "expo-status-bar", "expo-secure-store", "expo-build-properties"],
+    "extra": {
+      "eas": {
+        "projectId": "5186ee10-a655-4211-91bb-c7b5dc0b5e39"
+      }
+    }
   }
 }

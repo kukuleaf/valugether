@@ -1,6 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
+import { priceFreshnessStatus, priceMaxAgeDays } from '../common/price-freshness';
 
 type MetricHistoryRow = {
   metric_code: string;
@@ -23,7 +25,10 @@ type MetricHistoryRow = {
 
 @Injectable()
 export class StocksService {
-  constructor(@Inject(DB_POOL) private readonly db: Pool) {}
+  constructor(
+    @Inject(DB_POOL) private readonly db: Pool,
+    private readonly config: ConfigService,
+  ) {}
 
   async list(marketCode?: string, limit = 50) {
     const safeLimit = Math.min(Math.max(limit, 1), 200);
@@ -149,7 +154,8 @@ export class StocksService {
           `select
              dp.trade_date::text, dp.open_price, dp.high_price, dp.low_price,
              dp.close_price, dp.adjusted_close, dp.volume, dp.currency_code,
-             dp.fetched_at, p.provider_code, p.provider_name
+             dp.fetched_at, p.provider_code, p.provider_name,
+             (current_date-dp.trade_date)::int as age_days
            from daily_price dp
            join data_provider p on p.provider_id=dp.provider_id
            where dp.security_id=$1
@@ -204,6 +210,10 @@ export class StocksService {
     return {
       ...security.rows[0],
       latest_price: latestPrice.rows[0] ?? null,
+      price_status: priceFreshnessStatus(
+        latestPrice.rows[0]?.age_days == null ? null : Number(latestPrice.rows[0].age_days),
+        priceMaxAgeDays(this.config),
+      ),
       price_history: priceHistory.rows,
       metrics,
       dividends: dividends.rows,

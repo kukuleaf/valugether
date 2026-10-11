@@ -1,7 +1,9 @@
 import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
 import { RequestContextService } from '../common/http/request-context.service';
+import { priceFreshnessStatus, priceMaxAgeDays } from '../common/price-freshness';
 import { ScreenConditionDto, ScreenSearchDto } from './screening.dto';
 
 type Tolerance = { type: 'PERCENT' | 'ABSOLUTE'; value: number };
@@ -11,6 +13,7 @@ type Eval = { status: 'EXACT' | 'NEAR' | 'FAIL'; score: number };
 export class ScreeningService {
   constructor(
     @Inject(DB_POOL) private readonly db: Pool,
+    private readonly config: ConfigService,
     @Optional() private readonly context?: RequestContextService,
   ) {}
 
@@ -107,6 +110,7 @@ export class ScreeningService {
             metricName: m.name,
             unitType: m.unitType,
             actual: null,
+            asOfDate: null,
             target: c.target,
             target2: c.target2,
             operator: c.operator,
@@ -133,6 +137,7 @@ export class ScreeningService {
           metricName: m.name,
           unitType: m.unitType,
           actual,
+          asOfDate: s.values[c.metricCode].asOfDate,
           target: c.target,
           target2: c.target2,
           operator: c.operator,
@@ -161,6 +166,29 @@ export class ScreeningService {
     const exactCount = results.filter((x) => x.matchType === 'EXACT').length;
     const nearCount = results.length - exactCount;
     const limited = results.slice(0, dto.limit ?? 50);
+    if (limited.length) {
+      const prices = await this.db.query(
+        `select ids.security_id,price.trade_date::text as price_as_of_date,
+                (current_date-price.trade_date)::int as price_age_days
+         from unnest($1::bigint[]) as ids(security_id)
+         left join lateral (
+           select dp.trade_date from daily_price dp
+           where dp.security_id=ids.security_id
+           order by dp.trade_date desc,dp.provider_id limit 1
+         ) price on true`,
+        [limited.map((result) => result.securityId)],
+      );
+      const byId = new Map(prices.rows.map((price) => [Number(price.security_id), price]));
+      const maxAgeDays = priceMaxAgeDays(this.config);
+      for (const result of limited) {
+        const price = byId.get(result.securityId);
+        result.priceAsOfDate = price?.price_as_of_date ?? null;
+        result.priceStatus = priceFreshnessStatus(
+          price?.price_age_days == null ? null : Number(price.price_age_days),
+          maxAgeDays,
+        );
+      }
+    }
     const elapsed = Date.now() - started;
     if (recordHistory) {
       await this.db.query(

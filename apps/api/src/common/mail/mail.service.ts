@@ -42,13 +42,13 @@ export class MailService {
 
   sendEmailVerification(email: string, token: string) {
     const url = this.tokenUrl(
-      this.config.get<string>('EMAIL_VERIFICATION_URL') ?? 'rightstockvalue://auth/verify-email',
+      this.config.get<string>('EMAIL_VERIFICATION_URL') ?? 'valugether://auth/verify-email',
       token,
     );
     return this.transporter.sendMail({
       from: this.from,
       to: email,
-      subject: '[바른주식 밸류] 이메일을 인증해 주세요',
+      subject: '[가치보는주식] 이메일을 인증해 주세요',
       text: `아래 링크를 열어 이메일 인증을 완료해 주세요.\n\n${url}\n\n이 링크는 제한된 시간 동안만 유효합니다.`,
       html: this.html(
         '이메일 인증',
@@ -61,13 +61,13 @@ export class MailService {
 
   sendPasswordReset(email: string, token: string) {
     const url = this.tokenUrl(
-      this.config.get<string>('PASSWORD_RESET_URL') ?? 'rightstockvalue://auth/reset-password',
+      this.config.get<string>('PASSWORD_RESET_URL') ?? 'valugether://auth/reset-password',
       token,
     );
     return this.transporter.sendMail({
       from: this.from,
       to: email,
-      subject: '[바른주식 밸류] 비밀번호 재설정',
+      subject: '[가치보는주식] 비밀번호 재설정',
       text: `아래 링크를 열어 비밀번호를 재설정해 주세요.\n\n${url}\n\n요청하지 않았다면 이 메일을 무시하세요.`,
       html: this.html(
         '비밀번호 재설정',
@@ -80,7 +80,7 @@ export class MailService {
 
   sendPresetMatchNotification(email: string, notices: PresetMatchEmailNotice[]) {
     const totalCount = notices.reduce((sum, notice) => sum + notice.companies.length, 0);
-    const url = this.config.get<string>('PRESET_ALERT_URL') ?? 'rightstockvalue://custom';
+    const url = this.config.get<string>('PRESET_ALERT_URL') ?? 'valugether://custom';
     const textDetails = notices
       .map(
         (notice) =>
@@ -106,7 +106,7 @@ export class MailService {
     return this.transporter.sendMail({
       from: this.from,
       to: email,
-      subject: `[바른주식 밸류] 새 조건 충족 기업 ${totalCount}건`,
+      subject: `[가치보는주식] 새 조건 충족 기업 ${totalCount}건`,
       text: `저장한 맞춤기업 기준에서 새로운 조건 충족 기업 ${totalCount}건을 찾았습니다.\n\n${textDetails}\n\n앱에서 확인: ${url}\n\n이 정보는 투자 참고용이며 투자 권유가 아닙니다.`,
       html: `<!doctype html><html lang="ko"><body style="font-family:sans-serif;color:#162a3a">
         <h2>새로운 맞춤기업을 찾았습니다</h2>
@@ -135,7 +135,7 @@ export class MailService {
     return this.transporter.sendMail({
       from: this.from,
       to: recipients,
-      subject: `[바른주식 밸류 운영] 데이터 품질 ${alert.status} (${alert.issues.length}건)`,
+      subject: `[가치보는주식 운영] 데이터 품질 ${alert.status} (${alert.issues.length}건)`,
       text: `데이터 품질 검사에서 ${alert.issues.length}건을 발견했습니다.\n\n${lines.join('\n')}`,
       html: `<!doctype html><html lang="ko"><body style="font-family:sans-serif;color:#162a3a">
         <h2>데이터 품질 검사: ${this.escapeHtml(alert.status)}</h2>

@@ -2,8 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Card, H1, LoadingState, Muted, Page, palette } from '../components/ui';
+import { Button, Card, H1, LoadingState, Muted, Page, palette } from '../components/ui';
 import { PersistentTabBar } from '../components/PersistentTabBar';
+import { PriceDataNotice } from '../components/PriceDataNotice';
 import { runScreening, ScreenResult } from '../lib/api';
 
 const operatorLabels: Record<string, string> = {
@@ -46,10 +47,12 @@ export default function Results() {
     results: ScreenResult[];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   useEffect(() => {
     (async () => {
       try {
         setError(null);
+        setData(null);
         const conditions = params.conditions ? JSON.parse(params.conditions) : undefined;
         const exchangeCodes = params.exchanges ? JSON.parse(params.exchanges) : undefined;
         setData(
@@ -64,7 +67,7 @@ export default function Results() {
         setError(e.message ?? String(e));
       }
     })();
-  }, [params.strategy, params.conditions, params.exchanges]);
+  }, [params.strategy, params.conditions, params.exchanges, retryCount]);
   return (
     <View style={styles.screen}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
@@ -76,6 +79,7 @@ export default function Results() {
               <Text style={{ color: '#A00000', fontWeight: '700' }}>검색 실패</Text>
               <Muted>{error}</Muted>
               <Muted>잠시 후 다시 시도해 주세요.</Muted>
+              <Button title="다시 검색" onPress={() => setRetryCount((count) => count + 1)} />
             </Card>
           ) : null}
           {data && (
@@ -90,6 +94,12 @@ export default function Results() {
                   <Muted>근접 후보</Muted>
                 </Card>
               </View>
+              {!data.results.length && (
+                <Card>
+                  <Text style={styles.emptyTitle}>조건에 맞는 기업이 없습니다</Text>
+                  <Muted>조건을 바꾸거나 나중에 다시 검색해 주세요.</Muted>
+                </Card>
+              )}
               {data.results.map((x) => (
                 <Pressable
                   key={x.securityId}
@@ -115,7 +125,8 @@ export default function Results() {
                         </Text>
                       </View>
                     </View>
-                    {x.details.map((d: any) => (
+                    <PriceDataNotice status={x.priceStatus} asOfDate={x.priceAsOfDate} />
+                    {x.details.map((d) => (
                       <View key={d.metricCode} style={styles.metric}>
                         <Text style={styles.metricLabel}>{d.metricName ?? d.metricCode}</Text>
                         <Text
@@ -124,9 +135,11 @@ export default function Results() {
                             { color: d.status === 'NEAR' ? palette.near : palette.muted },
                           ]}
                         >
-                          {metricValue(d.actual, d.unitType)} / 기준{' '}
-                          {metricValue(d.target, d.unitType)} {operatorLabels[d.operator] ?? ''}
+                          {d.actual == null ? '자료 없음' : metricValue(d.actual, d.unitType)} /
+                          기준 {metricValue(d.target, d.unitType)}{' '}
+                          {operatorLabels[d.operator] ?? ''}
                           {d.status === 'NEAR' ? ' · 근접' : ''}
+                          {d.asOfDate ? ` · 지표 ${d.asOfDate.slice(0, 10)} 기준` : ''}
                         </Text>
                       </View>
                     ))}
@@ -152,6 +165,7 @@ const styles = StyleSheet.create({
   counts: { flexDirection: 'row', gap: 10, width: '100%' },
   countCard: { flex: 1, minWidth: 0 },
   big: { fontSize: 24, fontWeight: '800', color: palette.text },
+  emptyTitle: { color: palette.text, fontWeight: '800', fontSize: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   company: { flex: 1, minWidth: 0, paddingRight: 10 },
   ticker: { fontSize: 18, fontWeight: '800', color: palette.text },

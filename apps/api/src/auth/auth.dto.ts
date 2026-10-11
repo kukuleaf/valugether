@@ -8,6 +8,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -52,4 +53,18 @@ export class PasswordResetConfirmDto extends TokenConfirmDto {
 export class DeleteAccountDto {
   @Equals('DELETE_MY_ACCOUNT') confirmation!: string;
   @IsOptional() @IsString() password?: string;
+  @IsOptional() @IsString() @MaxLength(8192) kakaoIdToken?: string;
+  @IsOptional() @IsString() @MaxLength(4096) kakaoAccessToken?: string;
+  @IsOptional() @IsString() @MaxLength(128) kakaoNonce?: string;
+}
+
+export class KakaoLoginDto {
+  @IsString() @MinLength(20) @MaxLength(8192) idToken!: string;
+  @IsString() @MinLength(20) @MaxLength(128) nonce!: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => ConsentDto)
+  consents?: ConsentDto[];
 }

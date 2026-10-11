@@ -50,7 +50,7 @@ export class BatchQueueService implements OnModuleInit, OnModuleDestroy {
     private readonly dataQuality: DataQualityService,
   ) {
     this.enabled = this.config.get<string>('BATCH_WORKER_ENABLED') === 'true';
-    this.queueName = this.config.get<string>('BATCH_QUEUE_NAME') ?? 'right-stock-batch';
+    this.queueName = this.config.get<string>('BATCH_QUEUE_NAME') ?? 'valugether-batch';
     this.connection = {
       url: this.config.get<string>('REDIS_URL') ?? 'redis://localhost:6379',
       maxRetriesPerRequest: null,

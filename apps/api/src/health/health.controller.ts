@@ -9,6 +9,6 @@ export class HealthController {
   @Get()
   async getHealth() {
     const result = await this.db.query('select now() as db_time');
-    return { ok: true, service: 'stock-screener-api', dbTime: result.rows[0].db_time };
+    return { ok: true, service: 'valugether-api', dbTime: result.rows[0].db_time };
   }
 }

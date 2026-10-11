@@ -1,8 +1,8 @@
 -- Fictitious securities for local screening and detail-screen tests.
 
--- Local-development account only: demo@rightstock.local / DemoPassword1!
+-- Local-development account only: demo@valugether.local / DemoPassword1!
 INSERT INTO app_user(user_id,email,status_code,email_verified_at)
-VALUES ('00000000-0000-4000-8000-000000000001','demo@rightstock.local','ACTIVE',now())
+VALUES ('00000000-0000-4000-8000-000000000001','demo@valugether.local','ACTIVE',now())
 ON CONFLICT (email) DO UPDATE SET status_code='ACTIVE',deleted_at=NULL,updated_at=now();
 
 INSERT INTO user_password(user_id,password_hash)

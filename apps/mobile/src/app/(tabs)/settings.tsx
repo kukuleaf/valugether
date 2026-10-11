@@ -5,9 +5,11 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Button, Card, H1, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { api } from '../../lib/api';
 import { clearTokens, getAccess, getRefresh } from '../../lib/session';
+import { kakaoLogout } from '../../lib/kakao';
 
 type Profile = {
-  email: string;
+  email: string | null;
+  social_email: string | null;
   email_verified_at: string | null;
   last_login_at: string | null;
   created_at: string;
@@ -47,6 +49,9 @@ export default function Settings() {
       } catch {}
     }
     await clearTokens();
+    if (profile?.social_providers.includes('KAKAO')) {
+      await kakaoLogout().catch(() => undefined);
+    }
     setProfile(null);
   };
 
@@ -63,8 +68,16 @@ export default function Settings() {
                 <Ionicons name="person" size={24} color={palette.accent} />
               </View>
               <View style={styles.profileCopy}>
-                <Text style={styles.email}>{profile.email}</Text>
-                <Muted>{profile.email_verified_at ? '이메일 인증 완료' : '이메일 미인증'}</Muted>
+                <Text style={styles.email}>
+                  {profile.email ?? profile.social_email ?? '카카오 계정'}
+                </Text>
+                <Muted>
+                  {profile.has_password
+                    ? profile.email_verified_at
+                      ? '이메일 인증 완료'
+                      : '이메일 미인증'
+                    : '카카오 로그인 · 별도 이메일 인증 없음'}
+                </Muted>
               </View>
             </View>
           </Card>
@@ -92,7 +105,10 @@ export default function Settings() {
               onPress={() =>
                 router.push({
                   pathname: '/auth/delete-account',
-                  params: { hasPassword: String(profile.has_password) },
+                  params: {
+                    hasPassword: String(profile.has_password),
+                    socialProvider: profile.social_providers.includes('KAKAO') ? 'KAKAO' : '',
+                  },
                 })
               }
             />

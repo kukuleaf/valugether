@@ -235,7 +235,7 @@ test('search history, watchlist, preset, and notification settings', async () =>
   const token = login.body.accessToken;
 
   const metricSample = await db.query(
-    `select l.numeric_value,e.exchange_code
+    `select l.security_id,l.numeric_value,e.exchange_code
      from latest_metric_value l
      join financial_metric m on m.metric_id=l.metric_id and m.metric_code='CLOSE_PRICE'
      join security s on s.security_id=l.security_id
@@ -246,6 +246,10 @@ test('search history, watchlist, preset, and notification settings', async () =>
   assert.equal(metricSample.rowCount, 1, 'a CLOSE_PRICE metric is required');
   const exactValue = Number(metricSample.rows[0].numeric_value);
   const exchangeCode = metricSample.rows[0].exchange_code;
+  const stockDetail = await request(`/stocks/${metricSample.rows[0].security_id}`);
+  assert.equal(stockDetail.response.status, 200);
+  assert.ok(['CURRENT', 'DELAYED', 'MISSING'].includes(stockDetail.body.price_status));
+  assert.equal(stockDetail.body.price_status === 'MISSING', stockDetail.body.latest_price === null);
   const operatorCases = [
     { operator: 'LTE', target: 1e15, accepts: (value) => value <= 1e15 },
     { operator: 'LT', target: 1e15, accepts: (value) => value < 1e15 },
@@ -286,6 +290,13 @@ test('search history, watchlist, preset, and notification settings', async () =>
       assert.equal(result.details[0].operator, operatorCase.operator);
       assert.equal(result.details[0].status, 'EXACT');
       assert.ok(operatorCase.accepts(result.details[0].actual));
+      assert.match(result.details[0].asOfDate, /^\d{4}-\d{2}-\d{2}/);
+      assert.ok(['CURRENT', 'DELAYED', 'MISSING'].includes(result.priceStatus));
+      if (result.priceStatus === 'MISSING') {
+        assert.equal(result.priceAsOfDate, null);
+      } else {
+        assert.match(result.priceAsOfDate, /^\d{4}-\d{2}-\d{2}$/);
+      }
     }
   }
 

@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS system_setting (
 -- =========================
 CREATE TABLE IF NOT EXISTS app_user (
   user_id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  email             citext NOT NULL UNIQUE,
+  email             citext UNIQUE,
   status_code       varchar(30) NOT NULL DEFAULT 'ACTIVE',
   email_verified_at timestamptz,
   last_login_at     timestamptz,

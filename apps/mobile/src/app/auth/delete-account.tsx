@@ -4,14 +4,26 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Button, Card, H1, Input, Muted, Page } from '../../components/ui';
 import { api } from '../../lib/api';
 import { clearTokens } from '../../lib/session';
+import { kakaoLogin } from '../../lib/kakao';
 
 export default function DeleteAccount() {
-  const params = useLocalSearchParams<{ hasPassword?: string }>();
+  const params = useLocalSearchParams<{ hasPassword?: string; socialProvider?: string }>();
   const hasPassword = params.hasPassword !== 'false';
   const [password, setPassword] = useState('');
 
   const remove = async () => {
     try {
+      let kakaoProof:
+        { kakaoIdToken: string; kakaoAccessToken: string; kakaoNonce: string } | undefined;
+      if (!hasPassword && params.socialProvider === 'KAKAO') {
+        const { nonce } = await api<{ nonce: string }>('/auth/kakao/nonce', { method: 'POST' });
+        const proof = await kakaoLogin(nonce, true);
+        kakaoProof = {
+          kakaoIdToken: proof.idToken,
+          kakaoAccessToken: proof.accessToken,
+          kakaoNonce: nonce,
+        };
+      }
       await api(
         '/auth/me',
         {
@@ -19,6 +31,7 @@ export default function DeleteAccount() {
           body: JSON.stringify({
             confirmation: 'DELETE_MY_ACCOUNT',
             password: hasPassword ? password : undefined,
+            ...kakaoProof,
           }),
         },
         true,
@@ -67,7 +80,14 @@ export default function DeleteAccount() {
         </Card>
       ) : (
         <Card>
-          <Muted>간편 로그인 계정 탈퇴는 provider 재인증 연결 후 제공됩니다.</Muted>
+          {params.socialProvider === 'KAKAO' ? (
+            <>
+              <Muted>카카오 계정으로 다시 인증한 뒤 연결을 해제하고 탈퇴합니다.</Muted>
+              <Button title="카카오 재인증 후 영구 탈퇴" danger onPress={confirm} />
+            </>
+          ) : (
+            <Muted>이 간편 로그인 계정의 탈퇴 기능은 아직 준비 중입니다.</Muted>
+          )}
         </Card>
       )}
     </Page>

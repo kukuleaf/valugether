@@ -5,7 +5,7 @@ import process from 'node:process';
 const root = path.resolve(import.meta.dirname, '..');
 const suffix = `${Date.now()}-${process.pid}`;
 const containerName = `stock-redis-e2e-${suffix}`;
-const queueName = `right-stock-batch-e2e-${suffix}`;
+const queueName = `valugether-batch-e2e-${suffix}`;
 
 function docker(args, options = {}) {
   const result = spawnSync('docker', args, {

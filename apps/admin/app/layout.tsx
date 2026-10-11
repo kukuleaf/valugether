@@ -1,5 +1,5 @@
 import './globals.css';
-export const metadata = { title: 'Stock Screener Admin' };
+export const metadata = { title: 'Valugether Admin' };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">

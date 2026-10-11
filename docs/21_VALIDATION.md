@@ -1,10 +1,29 @@
 # 21. 검증 상태
 
-기준일: 2026-09-25
+기준일: 2026-10-05
 
 ## 이번에 통과한 검증
 
+- 2026-10-05 Kakao Android OIDC 로그인 구현
+  - Kakao SDK Expo config plugin, nonce를 포함한 네이티브 로그인, 서버 JWKS 서명·issuer·audience·만료·nonce 검증 구현
+  - 최초 가입 약관 동의, 이메일 없는 소셜 계정, 기존 계정 재로그인, 카카오 재인증 탈퇴·연결 해제 구현. 간편 로그인에는 이메일 인증/재설정 메일 없음
+  - 개발 DB에 `17_kakao_auth.sql` 적용. 카카오 인증 DB 통합 테스트 1/1, ID 토큰 암호 검증 단위 테스트 1/1, 기존 API E2E 3/3 통과
+  - `npm run typecheck`, 모바일 web export, 관리자·모바일 Playwright 4/4, Expo config plugin의 Android callback activity/스킴 introspection 통과
+  - 의존성 audit에서 Next.js 16.3.3의 조건부 critical advisory 감지. 관리자 앱은 `next/og ImageResponse` 미사용, 패치 업데이트는 별도 후속 작업
+  - 모바일/API Kakao Native app key 환경변수 미설정. 새 APK 실제 Kakao 로그인·탈퇴 및 외부 연결 해제 웹훅은 미검증
+
+- 2026-09-28 시세 기준일·지연/누락 안내
+  - 검색 결과·맞춤기업·종목 상세에 가격 기준일과 시세 지연/누락 상태 표시
+  - 검색 조건별 지표 기준일 표시. 시세 누락 시 재무정보 표시 유지, API 오류 재시도 버튼 추가
+  - 기존 데이터 품질 검사의 가격 최대 경과일 설정을 API 시세 상태 판정과 공유
+  - `npm run typecheck`, `npm run test:e2e` 3/3, `npm run test:ui:e2e` 4/4 통과. 검색·종목 상세 시세 상태 계약 확인
+  - Android APK 재빌드/실기기 확인은 이번 검증 범위에서 제외
+
 - 2026-09-25 전체 회귀와 운영 검증
+  - 브랜드를 가치보는주식/Valugether로 변경하고 Android package `com.valugether.app`, Expo slug·scheme `valugether` 적용
+  - 메일 제목, 관리자·모바일 표시명, package/workspace 이름, queue·rate-limit namespace, health ID와 문서의 기존 브랜드 제거
+  - 이용약관·개인정보 처리방침·투자정보·마케팅 동의 편집 초안을 `DRAFT`로 DB에 적용
+  - Google/Kakao/Naver, AdMob, Expo EAS 계정 개설·연결 순서를 TO-BE에 정리
   - `npm run typecheck`, `npm run build` 통과. Next.js 관리자 15개 route 생성
   - `npm run test:e2e` 3/3, `npm run test:batch` 2/2, `npm run test:queue` 1/1, `npm run test:ui:e2e` 4/4 통과
   - 관리자 보호 경로, CSP/보안 헤더, same-origin mutation, 로그인/로그아웃, 공지 lifecycle, Excel export를 Playwright Chromium으로 확인
@@ -131,6 +150,15 @@
   - 품질 실행/이슈/배치 결과 저장과 최신 결과 재조회 확인
   - 운영 이메일 비활성 상태에서 SMTP를 호출하지 않고 `SKIPPED_DISABLED`로 기록 확인
   - 동일 이슈 조합을 연속 실행해 첫 운영 알림 1회, 두 번째 `SKIPPED_DUPLICATE` 확인 후 임시 검증 기록 제거
+- Expo EAS Android preview build
+  - 잘못 생성된 루트 Expo 설정이 `expo/AppEntry`에서 루트 `App`을 찾던 최초 번들 실패 원인 확인
+  - EAS 앱 루트를 `apps/mobile`로 수정하고 Android application ID `com.valugether.app` 확인
+  - 로컬 Android export 성공: Expo Router entry 1,285개 모듈 번들
+  - EAS 프로젝트 `@kukuleaf/valugether`, 빌드 `e5f6854b-0b0b-4665-9584-7d26da33f802` preview APK 생성 성공
+  - EAS preview API 환경변수 미등록 상태 확인. 생성 APK의 설치·정적 화면 검증 후 실제 기기에서 접근 가능한 API 주소로 재빌드 필요
+  - Android 시스템 내비게이션과 하단 탭바 겹침을 기기별 bottom safe-area 기반 높이·패딩으로 수정
+  - `expo-build-properties`로 preview `usesCleartextTraffic=true`, production `false` 네이티브 Manifest 분리 확인
+  - 수정 빌드 `bdc58509-a51f-49de-8f4f-353d58e573f0`, versionCode `2` preview APK 생성 성공
 
 ## 구현을 확인했지만 런타임 검증이 필요한 범위
 
@@ -144,11 +172,10 @@
 - Marketstack 실제 키 수집 테스트
 - DART/SEC 전체 cursor 순회와 순회 완료 후 `0` reset 검증
 - 재무지표가 있지만 가격이 없는 NYSE 24개 종목 원인 확인
-- Android 실제 기기 및 EAS build
-- Google/Kakao/Naver callback
-- 소셜 로그인 provider 재인증 기반 회원 탈퇴
+- Android preview APK 실제 기기 설치·탐색과 production AAB build
+- Google/Naver callback, Kakao 새 APK 실기기 로그인·재인증 탈퇴 및 외부 연결 해제 웹훅
 - push 알림 전송과 AdMob SDK
 - 기존 로컬 Redis volume RDB의 현재 이미지 호환성 복구 및 운영 영속 Redis 장기 검증
 - 부하·외부 침투 테스트와 운영 backup 암호화·스케줄 검증
 
-현재 상태는 **정적 검사, production build, PostgreSQL 17 신규 설치·백업 복구, API·배치·큐·관리자·모바일 web 자동 E2E, OpenDART/SEC/KIS 실데이터 동기화를 검증한 MVP 구현본**이다. Android 실제 기기/EAS와 외부 계정·도메인·법률·운영 인프라 검증 전까지 출시 가능 판정은 아니다.
+현재 상태는 **정적 검사, production build, PostgreSQL 17 신규 설치·백업 복구, API·배치·큐·관리자·모바일 web 자동 E2E, Android EAS preview APK, OpenDART/SEC/KIS 실데이터 동기화를 검증한 MVP 구현본**이다. Android 실제 기기와 production AAB, 외부 계정·도메인·법률·운영 인프라 검증 전까지 출시 가능 판정은 아니다.

@@ -1,4 +1,4 @@
-# 바른주식 밸류 (Right Stock Value) v0.1
+# 가치보는주식 (Valugether) v0.1
 
 초보자를 위한 현명한 기업 찾기.
 
@@ -16,7 +16,7 @@ MVP 프로젝트입니다. 미국 시장 구현은 포함하지만 운영 검증
 - 데이터: KIS/OpenDART/SEC master·재무·가격 수집과 파생지표 계산
 - 운영: 관리자 대시보드, 허용오차, provider/배치/로그, 데이터 품질·운영 알림, 약관, 전략·공지, 순위 엑셀 export, BullMQ 자동 배치, request ID·전역 오류 로그, CORS allowlist·API rate limit
 - 검증: typecheck/build, PostgreSQL 17 신규 설치·백업 복구, API·배치·BullMQ·관리자·모바일 웹 자동 E2E, Expo Doctor 21/21, OpenDART/SEC/KIS 동기화 통과
-- 다음 작업: Android 실제 기기/EAS, 운영 도메인·소셜/광고 계정, 데이터 사용조건·법률 검토
+- 다음 작업: Android preview APK 실제 기기 검증과 production AAB, 운영 도메인·소셜/광고 계정, 데이터 사용조건·법률 검토
 
 상세 현황은 `docs/11_TODO_TOBE.md`, 검증 결과는 `docs/21_VALIDATION.md`를 참고합니다.
 
@@ -83,7 +83,7 @@ docker compose up -d
 
 `00_create_database.sql`은 접속 DB 자체를 만드는 파일이므로 PostgreSQL 관리자 DB(`postgres`)에서 실행합니다.
 
-그 후 생성한 DB에 접속하여 `01`~`15`를 순서대로 실행합니다.
+그 후 생성한 DB에 접속하여 `01`~`16`을 순서대로 실행합니다.
 
 ```text
 database/sql/
@@ -103,12 +103,14 @@ database/sql/
   13_auth_tokens.sql
   14_notification_email_delivery.sql
   15_data_quality.sql
+  16_legal_drafts.sql
+  17_kakao_auth.sql
 ```
 
 로컬 샘플 계정(`09_seed_demo.sql` 적용 후):
 
 ```text
-이메일: demo@rightstock.local
+이메일: demo@valugether.local
 비밀번호: DemoPassword1!
 ```
 
@@ -118,6 +120,8 @@ database/sql/
 ```bash
 npm run db:notification-email
 npm run db:data-quality
+npm run db:legal-drafts
+npm run db:kakao-auth
 ```
 
 ## 실데이터 동기화
@@ -194,6 +198,7 @@ Docker 기반 검증은 임시 컨테이너와 dump를 성공·실패 여부와 
 - `19_TECH_STACK.md` : 기술 스택
 - `20_RELEASE_CHECKLIST.md` : 상용 출시 체크리스트
 - `21_VALIDATION.md` : 최근 검증 결과
+- `22_LEGAL_DRAFTS.md` : 약관·개인정보·투자정보 편집 초안
 - `SOURCES.md` : 외부 문서/공식 링크
 
 ## 중요

@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, H1, LoadingState, Muted, Page, palette } from '../../components/ui';
 import { api, runScreening, ScreenPreset, ScreenResult } from '../../lib/api';
+import { PriceDataNotice } from '../../components/PriceDataNotice';
 import { getAccess } from '../../lib/session';
 
 type Notification = {
@@ -173,6 +174,10 @@ export default function CustomCompanies() {
                   <View style={styles.companyCopy}>
                     <Text style={styles.ticker}>{company.ticker}</Text>
                     <Muted>{company.name}</Muted>
+                    <PriceDataNotice
+                      status={company.priceStatus}
+                      asOfDate={company.priceAsOfDate}
+                    />
                   </View>
                   <Text style={styles.match}>
                     {company.matchType === 'EXACT' ? '충족' : '근접'} {company.similarity}%

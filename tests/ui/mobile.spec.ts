@@ -13,6 +13,7 @@ test.describe.serial('mobile web smoke', () => {
     });
     page.on('dialog', (dialog) => dialog.accept());
     await page.goto(MOBILE);
+    await expect(page.getByText('가치보는주식', { exact: true })).toBeVisible();
     await expect(page.getByText('숫자로 확인하는')).toBeVisible();
     await expect(page.getByText('저평가 기업')).toBeVisible();
 

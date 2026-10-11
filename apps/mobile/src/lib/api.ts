@@ -73,7 +73,19 @@ export type ScreenResult = {
   exchangeCode: string;
   matchType: 'EXACT' | 'NEAR';
   similarity: number;
-  details: any[];
+  priceAsOfDate: string | null;
+  priceStatus: 'CURRENT' | 'DELAYED' | 'MISSING';
+  details: {
+    metricCode: string;
+    metricName: string;
+    unitType: string;
+    actual: number | null;
+    asOfDate: string | null;
+    target: number;
+    target2?: number;
+    operator: string;
+    status: 'EXACT' | 'NEAR' | 'FAIL';
+  }[];
 };
 export type ScreenPreset = {
   preset_id: number;

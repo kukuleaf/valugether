@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
 import { MailService } from '../common/mail/mail.service';
+import { priceMaxAgeDays } from '../common/price-freshness';
 
 type Severity = 'WARNING' | 'CRITICAL';
 type QualityIssue = {
@@ -161,7 +162,7 @@ export class DataQualityService {
 
   private async collect() {
     const thresholds = {
-      priceMaxAgeDays: this.numberConfig('DATA_QUALITY_PRICE_MAX_AGE_DAYS', 4, 1, 30),
+      priceMaxAgeDays: priceMaxAgeDays(this.config),
       financialMaxAgeDays: this.numberConfig('DATA_QUALITY_FINANCIAL_MAX_AGE_DAYS', 550, 30, 1500),
       minPriceCoveragePercent: this.numberConfig(
         'DATA_QUALITY_MIN_PRICE_COVERAGE_PERCENT',
