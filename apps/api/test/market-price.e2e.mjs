@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 require('reflect-metadata');
 const { Pool } = require('pg');
 const { MarketPriceSyncService } = require('../dist/src/batch/market-price-sync.service.js');
+const { KisHistoryProvider } = require('../dist/src/providers/kis-history.provider.js');
 
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
 const databaseHost = new URL(process.env.DATABASE_URL).hostname;
@@ -103,6 +104,42 @@ test('MOCK price sync is idempotent', async () => {
     [securityIds],
   );
   assert.equal(rows.rows[0].count, 2);
+});
+
+test('historical rows do not overwrite the newest price metric', async () => {
+  provider.prices = [price(tickers[0], '2099-12-28', 88), price(tickers[0], '2099-12-30', 102)];
+  const result = await service.run(exchangeMic);
+  runIds.push(result.runId);
+  assert.equal(result.inserted, 1);
+  assert.equal(result.updated, 1);
+  const rows = await db.query(
+    `select dp.trade_date::text,dp.close_price from daily_price dp
+     where dp.security_id=$1 order by dp.trade_date`,
+    [securityIds[0]],
+  );
+  assert.deepEqual(rows.rows.map((row) => row.trade_date), ['2099-12-28', '2099-12-30']);
+  const latest = await db.query(
+    `select l.as_of_date::text,l.numeric_value from latest_metric_value l
+     join financial_metric m on m.metric_id=l.metric_id
+     where l.security_id=$1 and m.metric_code='CLOSE_PRICE'`,
+    [securityIds[0]],
+  );
+  assert.equal(latest.rows[0].as_of_date, '2099-12-30');
+  assert.equal(Number(latest.rows[0].numeric_value), 102);
+});
+
+test('KIS adapter returns every daily close in date order', async () => {
+  const kis = {
+    fetchOverseasDaily: async () => [
+      { xymd: '20261010', clos: '104' },
+      { xymd: '20261009', clos: '101' },
+    ],
+  };
+  const adapter = new KisHistoryProvider(kis, { get: () => 0 });
+  const rows = await adapter.fetchLatestEod({ exchangeMic: 'XNAS', externalSymbols: ['TEST'] });
+  assert.deepEqual(rows.map((row) => [row.tradeDate, row.close]), [
+    ['2026-10-09', 101], ['2026-10-10', 104],
+  ]);
 });
 
 test('one invalid row rolls back to a savepoint and later rows continue', async () => {

@@ -30,6 +30,7 @@ const AUTH_PATHS = new Set([
   '/auth/login',
   '/auth/kakao/nonce',
   '/auth/kakao/login',
+  '/auth/naver/login',
   '/auth/refresh',
   '/auth/email-verification/request',
   '/auth/email-verification/confirm',
@@ -76,7 +77,10 @@ export class RateLimitGuard implements CanActivate {
   private policy(request: HttpRequest): Policy | undefined {
     if (request.method === 'OPTIONS') return undefined;
     const path = this.path(request);
-    if (request.method === 'POST' && AUTH_PATHS.has(path)) {
+    if (
+      (request.method === 'POST' && AUTH_PATHS.has(path)) ||
+      (request.method === 'DELETE' && path === '/auth/me')
+    ) {
       return {
         scope: 'auth',
         limit: this.positiveInt('AUTH_RATE_LIMIT_MAX', 10),

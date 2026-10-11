@@ -87,8 +87,8 @@
 - [x] Android 패키지명 확정: `com.valugether.app`
 - [-] 운영 이메일 발송 provider는 Resend로 확정. 서비스 도메인·발신 주소 등록은 남음
 - [ ] OpenDART/KIS 운영 키 및 사용조건 확인
-- [-] Kakao Android OIDC 로그인·약관 동의·이메일 없는 계정·재인증 탈퇴 코드와 로컬 DB 검증 완료. 양쪽 앱 키 설정·새 APK 실기기 검증·외부 연결 해제 웹훅 필요. Google/Naver는 미구현
-- [ ] AdMob 계정·앱·실제 ID 생성 및 SDK 연결. 아래 개설·연결 순서 참고
+- [-] Kakao Android OIDC 로그인·약관 동의·이메일 없는 계정·재인증 탈퇴 코드와 로컬 DB 검증 완료. 양쪽 앱 키 설정·새 APK 실기기 검증·외부 연결 해제 웹훅 필요. Naver는 Android SDK와 서버 검증부터 구현하며 웹 OAuth는 보류. Google은 미구현
+- [-] AdMob SDK·UMP·홈/검색 결과 테스트 배너 연결 완료. 운영 계정·앱·실제 ID·동의 메시지·게시 검증 필요. 아래 개설·연결 순서 참고
 - [-] 개인정보처리방침/이용약관/투자정보 초안 작성과 DB `DRAFT` seed 완료. 운영자 정보 입력·법률 검토·게시 필요
 - [-] Market data 외부 표시, DB 저장, 파생 표시 범위 확인 질문 초안 완료. 공급자 서면 확인 필요
 - [x] CORS allowlist, 프록시 신뢰 hop, 인증·검색 API memory/Redis rate limit
@@ -186,12 +186,14 @@ Git에 넣지 말고 암호화된 비밀번호 관리자나 별도 보안 저장
 
 ### 4. Naver 로그인
 
-1. Naver Developers에서 애플리케이션을 등록하고 네이버 로그인을 선택합니다.
-2. Android 환경에 package `com.valugether.app`과 App Scheme `valugether`를 등록합니다.
-3. 서비스 도메인 확정 후 서버 callback URL과 연결 끊기 callback URL을 HTTPS로 등록합니다.
-4. 이름·프로필 등은 제외하고 내부 계정 연결에 필요한 고유 식별자와 이메일만 신청합니다.
-5. Client ID/secret은 API 서버 Secret Manager에만 저장합니다.
-6. 개발 완료 뒤 검수 자료와 로그인·동의·탈퇴 화면을 제출합니다.
+1. Naver Developers에서 애플리케이션을 등록하고 네이버 로그인을 선택합니다. 개발용 키는 사용자에게 전달받았습니다.
+2. Android 환경에 package `com.valugether.app`과 앱 이름을 등록하고 개발 중 사용할 테스트 계정을 추가합니다.
+3. 먼저 Android 공식 SDK를 사용합니다. 웹 OAuth는 NestJS 공개 HTTPS 배포 후 callback URL과 연결 끊기 알림을 설정하며 현재는 보류합니다.
+4. 이름·생일·성별·휴대전화번호 등 불필요한 항목을 제외합니다. 고유 식별자를 사용하며 이메일은 제공되지 않아도 가입할 수 있습니다.
+5. API와 모바일 빌드에 같은 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`을 설정합니다. 모바일은 공개 JavaScript 환경변수가 아닌 네이티브 리소스로 주입하지만 APK 추출 방지는 보장되지 않습니다. 노출된 Secret은 운영 전 재발급합니다.
+6. 서버는 SDK refresh token을 우리 Client ID/Secret으로 교환한 새 토큰으로 프로필을 확인합니다. 약관 동의·로그인·로그아웃·탈퇴의 코드/모킹 회귀와 실제 기기 검증을 구분합니다.
+7. Client ID/secret은 API 서버 Secret Manager에만 저장합니다.
+8. 개발 완료 뒤 검수 자료와 로그인·동의·탈퇴 화면을 제출합니다.
 
 공식 문서: <https://developers.naver.com/docs/login/devguide/devguide.md>
 
@@ -201,7 +203,7 @@ Git에 넣지 말고 암호화된 비밀번호 관리자나 별도 보안 저장
 2. 아직 Play에 게시되지 않았다면 unpublished Android 앱으로 `가치보는주식`을 등록합니다.
 3. AdMob App ID와 필요한 광고 단위 ID를 발급합니다.
 4. 개발 중에는 Google demo 광고 단위 또는 등록한 test device만 사용합니다. 실제 광고를 개발자가 클릭하지 않습니다.
-5. 개인정보 동의 UI와 Google Play Data safety를 확정한 뒤 SDK를 연결하고 `EXPO_PUBLIC_ADS_ENABLED`를 켭니다.
+5. Android SDK·동의 게이트·홈/결과 배너는 구현되어 있습니다. AdMob의 Privacy & messaging에서 필요한 지역의 메시지를 게시하고 개인정보처리방침·Google Play Data safety를 확정합니다. production EAS 환경에 실제 ID와 `EXPO_PUBLIC_ADS_ENABLED=true`를 입력합니다.
 6. 도메인 확정 후 개발자 웹사이트에 `app-ads.txt`를 게시하고 Play 스토어의 개발자 웹사이트와 연결합니다.
 7. 출시 직전에 production ID로 교체하고 test ID가 남지 않았는지 검사합니다.
 

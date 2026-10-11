@@ -1,18 +1,15 @@
 'use client';
-import { useEffect, useState } from 'react';
 import { Shell } from '../../components/Shell';
 import { JsonTable } from '../../components/JsonTable';
+import { ResourceFeedback } from '../../components/ResourceFeedback';
+import { useAdminResource } from '../../lib/use-admin-resource';
 export default function Dashboard() {
-  const [d, setD] = useState<any>();
-  useEffect(() => {
-    fetch('/api/admin/dashboard')
-      .then((r) => r.json())
-      .then(setD);
-  }, []);
+  const { data: d, error, loading, load } = useAdminResource<any>('/api/admin/dashboard', null);
   return (
     <Shell>
       <h1 className="title">Dashboard</h1>
       <p className="muted">데이터 적재상태와 서비스 핵심 운영지표</p>
+      <ResourceFeedback error={error} loading={loading} retry={load} />
       <div className="grid">
         <div className="card">
           <div className="muted">회원</div>

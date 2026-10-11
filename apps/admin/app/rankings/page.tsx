@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Shell } from '../../components/Shell';
+import { adminFetch } from '../../lib/api-client';
 
 export default function RankingsPage() {
   const [marketCode, setMarketCode] = useState('US');
@@ -10,15 +11,15 @@ export default function RankingsPage() {
   const [error, setError] = useState('');
 
   async function download() {
+    if (downloading) return;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      return setError('기업 수는 1~500 사이의 정수로 입력하세요.');
+    }
     setDownloading(true);
     setError('');
     try {
       const params = new URLSearchParams({ marketCode, limit: String(limit) });
-      const response = await fetch(`/api/admin/rankings/export?${params}`);
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.message ?? '엑셀 생성에 실패했습니다.');
-      }
+      const response = await adminFetch(`/api/admin/rankings/export?${params}`);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');

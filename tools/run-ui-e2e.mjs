@@ -10,6 +10,7 @@ const apiEnvironment = {
   ...process.env,
   NODE_ENV: 'test',
   PORT: '3201',
+  API_HOST: '127.0.0.1',
   BATCH_WORKER_ENABLED: 'false',
   CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:3101,http://127.0.0.1:3102',
   RATE_LIMIT_STORE: 'memory',
@@ -18,11 +19,14 @@ const apiEnvironment = {
 };
 const servers = [
   start(['apps/api/dist/src/main.js'], apiEnvironment),
-  start(['node_modules/next/dist/bin/next', 'start', 'apps/admin', '-p', '3101'], {
-    ...process.env,
-    NODE_ENV: 'production',
-    ADMIN_API_BASE_URL: 'http://127.0.0.1:3201/api',
-  }),
+  start(
+    ['node_modules/next/dist/bin/next', 'start', 'apps/admin', '-p', '3101', '-H', '127.0.0.1'],
+    {
+      ...process.env,
+      NODE_ENV: 'production',
+      ADMIN_API_BASE_URL: 'http://127.0.0.1:3201/api',
+    },
+  ),
   start(['tools/static-server.mjs', 'apps/mobile/dist/e2e-web', '3102'], process.env),
 ];
 

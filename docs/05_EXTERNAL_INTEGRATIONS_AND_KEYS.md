@@ -107,14 +107,16 @@ Provider를 바꾸더라도 DB/스크리닝 코드는 유지됩니다.
 
 - [ ] Google Cloud Project
 - [ ] OAuth consent screen
-- [ ] Android OAuth Client ID (package + SHA)
-- [ ] Web client ID/secret (백엔드 검증/웹 관리자 필요 시)
+- [x] Android OAuth Client ID 생성 및 `com.valugether.app` 패키지 등록 (사용자 제공 콘솔 화면 확인)
+- [ ] 등록된 SHA-1이 EAS preview APK 서명과 일치하는지 확인; Play 앱 서명 SHA-1도 출시 전 등록
+- [ ] Web application OAuth Client ID (Android에서 발급받은 ID 토큰의 서버 검증용)
+
+사용자가 제공한 `client_secret_817021645615-01s3hcmurbsjseosgvofe94i359fs2u2.apps.googleusercontent.com.json`에는 `installed.client_id`가 있고 `client_secret`은 없습니다. JSON 형식만으로 유형을 단정할 수 없었으나, 이후 제공한 Google Cloud Console 화면에서 이 ID가 **Android**용이고 패키지가 `com.valugether.app`임을 확인했습니다. 콘솔에 SHA-1도 등록되어 있지만 실제 EAS preview APK 서명과 일치하는지는 아직 확인하지 못했습니다. Play 배포용 서명 SHA-1은 별도 등록 대상입니다. 서버가 Android Google 로그인의 ID 토큰을 검증하려면 동일 프로젝트의 **Web application** 클라이언트 ID도 필요합니다. ID 토큰 검증만 할 때 Web client secret은 필요하지 않습니다. 이 파일은 Android의 `google-services.json`이 아니며 앱에 복사하지 않습니다.
 
 환경변수 예:
 
 ```text
 GOOGLE_WEB_CLIENT_ID=
-GOOGLE_WEB_CLIENT_SECRET=
 EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=
 ```
 
@@ -155,10 +157,12 @@ development/preview 빌드가 필요하다. 최초 가입은 서비스 약관 �
 
 필요:
 
-- [ ] 애플리케이션 등록
-- [ ] Callback URL
+- [x] 애플리케이션 등록 및 개발용 Client ID/Secret 전달 (사용자 확인)
+- [-] Android SDK·서버 토큰 검증·약관 가입·탈퇴 연결 구현. 새 APK 실제 로그인 검증 필요
+- [ ] 웹 OAuth Callback URL: NestJS 공개 HTTPS 배포 후 설정. 현재 사용자의 선택에 따라 웹 로그인은 보류
 - [ ] Android package 등록
 - [ ] 최소 프로필 항목만 요청
+- [ ] 개발 중 상태의 테스트 계정 등록 및 출시 전 검수 요청
 
 환경변수:
 
@@ -166,6 +170,21 @@ development/preview 빌드가 필요하다. 최초 가입은 서비스 약관 �
 NAVER_CLIENT_ID=
 NAVER_CLIENT_SECRET=
 ```
+
+Android SDK는 모바일 빌드의 비공개 환경변수 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`을
+네이티브 문자열 리소스로 주입합니다. `EXPO_PUBLIC_`이나 Expo `extra`에는 키 값을 넣지
+않습니다. 그래도 APK 리소스는 추출할 수 있으므로 운영 키는 공개 저장소·로그에 남기지
+않으며, 대화에서 노출된 Secret은 운영 전에 재발급합니다. 로컬 `.env`는 Git/EAS 업로드에서
+제외되므로 EAS 환경에도 별도로 두 값을 설정해야 합니다.
+
+API에도 동일한 앱의 두 환경변수가 필요합니다. API는 클라이언트가 보내는 프로필이나
+액세스 토큰을 신뢰하지 않고 네이버 refresh grant를 서버의 Client ID/Secret으로 교환한 뒤
+그 새 토큰으로 계정 식별자를 조회합니다. 이메일은 선택 정보이며 이메일 일치로 기존
+계정을 자동 병합하지 않습니다. 실제 네이버 인증 요청과 새 APK 검증은 별도입니다.
+EAS에서 네이버를 켜려면 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`을 해당 환경의
+`sensitive` 가시성 변수로 등록합니다. 현재 동적 앱 설정이 EAS CLI에서도 값을 확인하므로
+CLI가 읽을 수 없는 `secret` 가시성은 사용하지 않습니다. SDK 자격 정보가 Android
+리소스에 포함된다는 제한은 가시성 설정으로 제거되지 않습니다.
 
 ## C. 광고
 
@@ -177,20 +196,29 @@ NAVER_CLIENT_SECRET=
 
 - [ ] AdMob 계정
 - [ ] Android 앱 등록
-- [ ] App ID
-- [ ] Banner/Interstitial 등 Ad Unit ID
-- [ ] 테스트 광고 ID로 개발
+- [x] 사용자 제공 Android App ID를 EAS production 프로필에 등록
+- [x] 사용자 제공 홈/검색 결과 Banner Ad Unit ID를 EAS production 프로필에 등록 (전면광고 사용하지 않음)
+- [x] 테스트 광고 ID·Android SDK·UMP 동의 게이트 구현
 - [ ] 출시 전 app-ads.txt/스토어 설정 확인
 
 환경변수 예:
 
 ```text
-EXPO_PUBLIC_ADS_ENABLED=false
+EXPO_PUBLIC_ADS_ENABLED=true
 EXPO_PUBLIC_ADMOB_ANDROID_APP_ID=
 EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID=
+EXPO_PUBLIC_ADMOB_HOME_BANNER_UNIT_ID=
+EXPO_PUBLIC_ADMOB_RESULTS_BANNER_UNIT_ID=
 ```
 
-광고 SDK는 개인정보/동의 정책과 스토어 정책을 함께 검토합니다.
+개발·preview 빌드는 환경변수의 실광고 ID를 무시하고 Google 테스트 ID만 사용합니다.
+세 EAS 프로필에서 광고를 활성화했습니다. 공개 식별자인 광고 ID만 `eas.json`에 기록하며,
+development·preview에는 실제 ID를 설정하지 않습니다. 프로필별 생성 AndroidManifest의
+App ID와 production의 cleartext 비활성화까지 쓰기 없는 introspection 테스트로 확인했습니다.
+production에서 광고를 켜면 실제 App ID와 같은 publisher의 배너 ID가 필수입니다.
+별도 placement ID가 없으면 `EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID`를 공통으로 사용합니다.
+ID는 모바일 빌드에 포함되며 변경 후 새 APK/AAB가 필요합니다. 상세 배치·운영 절차는
+`docs/23_ADS_AND_RELEASE_AUDIT.md`를 확인합니다. 웹/iOS/관리자에는 AdMob 광고를 요청하지 않습니다.
 
 ## D. 이메일
 

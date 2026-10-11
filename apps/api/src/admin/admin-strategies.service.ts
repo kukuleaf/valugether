@@ -17,6 +17,8 @@ export type UpdateStrategyInput = {
   description: string;
   isActive: boolean;
   displayOrder: number;
+  sortMetricCode?: string | null;
+  sortDirection?: 'ASC' | 'DESC';
   conditions: StrategyConditionInput[];
 };
 
@@ -30,7 +32,7 @@ export class AdminStrategiesService {
   async list() {
     const result = await this.db.query(
       `select s.strategy_id,s.strategy_code,s.strategy_name,s.description,s.is_active,
-              s.display_order,s.updated_at,
+              s.display_order,s.sort_metric_code,s.sort_direction,s.updated_at,
               coalesce(json_agg(json_build_object(
                 'id',c.strategy_condition_id,'metricCode',m.metric_code,
                 'metricName',m.metric_name_ko,'unitType',m.unit_type,
@@ -74,6 +76,9 @@ export class AdminStrategiesService {
       const beforeRow = await this.loadOne(client, strategyId);
       if (!beforeRow) throw new BadRequestException('전략을 찾을 수 없습니다.');
       before = this.mapStrategy(beforeRow);
+      const sortMetricCode =
+        input.sortMetricCode === undefined ? before.sortMetricCode : input.sortMetricCode;
+      const sortDirection = input.sortDirection ?? before.sortDirection;
 
       const uniqueMetrics = new Set(input.conditions.map((condition) => condition.metricCode));
       if (uniqueMetrics.size !== input.conditions.length) {
@@ -86,19 +91,24 @@ export class AdminStrategiesService {
           }
         }
       }
+      const wantedMetrics = new Set([
+        ...uniqueMetrics,
+        ...(sortMetricCode ? [sortMetricCode] : []),
+      ]);
       const metrics = await client.query(
         `select metric_id,metric_code from financial_metric
          where is_active=true and metric_code=any($1::text[])`,
-        [[...uniqueMetrics]],
+        [[...wantedMetrics]],
       );
-      if (metrics.rowCount !== uniqueMetrics.size) {
+      if (metrics.rowCount !== wantedMetrics.size) {
         throw new BadRequestException('사용할 수 없는 지표가 포함되어 있습니다.');
       }
       const metricIds = new Map(metrics.rows.map((row) => [row.metric_code, row.metric_id]));
 
       await client.query(
         `update screen_strategy
-         set strategy_name=$2,description=$3,is_active=$4,display_order=$5,updated_at=now()
+         set strategy_name=$2,description=$3,is_active=$4,display_order=$5,
+             sort_metric_code=$6,sort_direction=$7,updated_at=now()
          where strategy_id=$1`,
         [
           strategyId,
@@ -106,6 +116,8 @@ export class AdminStrategiesService {
           input.description.trim() || null,
           input.isActive,
           input.displayOrder,
+          sortMetricCode,
+          sortDirection,
         ],
       );
       await client.query('delete from screen_strategy_condition where strategy_id=$1', [
@@ -176,6 +188,8 @@ export class AdminStrategiesService {
       description: row.description ?? '',
       isActive: row.is_active,
       displayOrder: row.display_order,
+      sortMetricCode: row.sort_metric_code,
+      sortDirection: row.sort_direction,
       updatedAt: row.updated_at,
       conditions: row.conditions.map((condition: any) => ({
         ...condition,

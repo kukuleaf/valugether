@@ -1,15 +1,33 @@
 # 21. 검증 상태
 
-기준일: 2026-10-05
+기준일: 2026-10-11
 
 ## 이번에 통과한 검증
+
+- 2026-10-11 공식 로그인 자산·네이버 Android SDK·EAS 운영 광고 ID 최종 통합
+  - 제공 ZIP의 Google·Kakao·Naver 원본 PNG를 사용하고 390px·320px 화면에서 순서, 비율, 로딩을 검증했다.
+  - Android 네이버 SDK 5.12.0 로컬 Expo 모듈과 네이티브 자격 정보 config plugin, 서버 refresh grant 검증, 최초 가입 약관, 재인증 탈퇴 및 연결 해제 처리를 구현했다. 웹 OAuth는 사용자 요청에 따라 보류했다.
+  - 사용자 제공 실제 AdMob App ID와 두 배너 Unit ID를 EAS production에 등록했다. development·preview는 운영 ID가 섞여도 테스트 ID만 사용하며, 세 프로필의 생성 AndroidManifest를 introspection으로 확인했다.
+  - API 12/12, 네이버 API 12/12, Kakao 2/2, 가격 배치 4/4, Redis 큐 1/1, 광고 설정·동의·EAS 15/15, 모바일 네이버 adapter/config 14/14, Chromium UI 23/23: 총 83개 자동검증 통과
+  - API·모바일 타입 검사, API·관리자 production build 및 모바일 web export 통과. 네이버를 포함한 새 Android 네이티브 빌드·실계정 로그인·광고 송출은 도구 승인 검토 한도로 실행하지 못했다. 이전 debug 빌드를 최신 APK로 간주하지 않는다.
+  - production 의존성 audit 잔여 31건(critical 0, high 20, moderate 11), 실제 UMP 설정, 네이버 노출 키 재발급·EAS 환경 등록은 출시 전 조건으로 남는다. 자세한 결과는 `23_ADS_AND_RELEASE_AUDIT.md`에 기록했다.
+
+- 2026-10-11 광고 통합 및 앱·관리자·API 회귀
+  - Android AdMob 인라인 배너, 테스트/운영 ID 분리, 운영 UMP 동의 선행, 개인정보 옵션과 개인정보 안내 화면 구현
+  - 홈 하단과 6건 이상 검색 결과의 5번째 카드 뒤에만 광고를 배치했다. 로그인·검색 입력·상세 차트에는 강제 전면 광고나 고정 광고를 넣지 않았다.
+  - 모바일/API 타입 검사, API·Next.js 16.3.8 production build, 관리자 15개 route, 모바일 web export 통과
+  - API 12/12, Kakao 2/2, 가격 배치 4/4, Redis 큐 1/1, 광고 설정·동의 단위검증 12/12, 관리자·모바일 Chromium 회귀 20/20 통과
+  - 좁은 320px 화면에서 홈 한 줄 제목·시장 선택 가로 스크롤·재무 그리드 폭·차트 닫기 위치와 비동기 차트 응답 경합을 검증했다.
+  - AdMob 포함 Android x86_64 debug APK 빌드 성공(359 tasks). 에뮬레이터 설치 및 앱의 API 요청은 확인했지만, 최신 화면·실제 배너의 육안 검증은 도구 승인 한도로 완료하지 못했다.
+  - production 의존성 audit 31건(critical 0, high 20, moderate 11). 호환 패치 후 자동 회귀를 재실행했으며, 잔여 upstream 취약점과 운영 계정 검증은 출시 조건으로 남는다.
+  - 추가 요청한 공식 로그인 이미지와 Android 네이버 SDK 통합 결과는 `23_ADS_AND_RELEASE_AUDIT.md`에 따로 기록한다. 이 단락의 검증 수치는 네이버 통합 이전 기준이다.
 
 - 2026-10-05 Kakao Android OIDC 로그인 구현
   - Kakao SDK Expo config plugin, nonce를 포함한 네이티브 로그인, 서버 JWKS 서명·issuer·audience·만료·nonce 검증 구현
   - 최초 가입 약관 동의, 이메일 없는 소셜 계정, 기존 계정 재로그인, 카카오 재인증 탈퇴·연결 해제 구현. 간편 로그인에는 이메일 인증/재설정 메일 없음
   - 개발 DB에 `17_kakao_auth.sql` 적용. 카카오 인증 DB 통합 테스트 1/1, ID 토큰 암호 검증 단위 테스트 1/1, 기존 API E2E 3/3 통과
   - `npm run typecheck`, 모바일 web export, 관리자·모바일 Playwright 4/4, Expo config plugin의 Android callback activity/스킴 introspection 통과
-  - 의존성 audit에서 Next.js 16.3.3의 조건부 critical advisory 감지. 관리자 앱은 `next/og ImageResponse` 미사용, 패치 업데이트는 별도 후속 작업
+  - 당시 의존성 audit에서 Next.js 16.3.3의 조건부 critical advisory 감지. 2026-10-11 Next.js 16.3.8로 패치하고 빌드·회귀를 재검증했다.
   - 모바일/API Kakao Native app key 환경변수 미설정. 새 APK 실제 Kakao 로그인·탈퇴 및 외부 연결 해제 웹훅은 미검증
 
 - 2026-09-28 시세 기준일·지연/누락 안내
@@ -174,8 +192,9 @@
 - 재무지표가 있지만 가격이 없는 NYSE 24개 종목 원인 확인
 - Android preview APK 실제 기기 설치·탐색과 production AAB build
 - Google/Naver callback, Kakao 새 APK 실기기 로그인·재인증 탈퇴 및 외부 연결 해제 웹훅
-- push 알림 전송과 AdMob SDK
+- push 알림 전송
+- AdMob 운영 계정의 실제 광고 송출·UMP 메시지·개인정보 옵션 및 실제 Android 기기 검증. SDK 통합·네이티브 debug 빌드·설정/동의 단위검증은 2026-10-11 완료
 - 기존 로컬 Redis volume RDB의 현재 이미지 호환성 복구 및 운영 영속 Redis 장기 검증
 - 부하·외부 침투 테스트와 운영 backup 암호화·스케줄 검증
 
-현재 상태는 **정적 검사, production build, PostgreSQL 17 신규 설치·백업 복구, API·배치·큐·관리자·모바일 web 자동 E2E, Android EAS preview APK, OpenDART/SEC/KIS 실데이터 동기화를 검증한 MVP 구현본**이다. Android 실제 기기와 production AAB, 외부 계정·도메인·법률·운영 인프라 검증 전까지 출시 가능 판정은 아니다.
+현재 상태는 정적 검사, production build, PostgreSQL 17 신규 설치·백업 복구, API·배치·큐·관리자·모바일 web 자동 E2E, 과거 Android EAS preview APK, AdMob 포함 로컬 Android debug 빌드, OpenDART/SEC/KIS 실데이터 동기화를 검증한 MVP 구현본이다. Android 실제 기기와 production AAB, 광고 운영 계정·동의, 잔여 보안 취약점, 외부 계정·도메인·법률·운영 인프라 검증 전까지 출시 가능 판정은 아니다.

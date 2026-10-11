@@ -1,0 +1,22 @@
+# Keep credentials, local caches, and validation artifacts out of EAS archives.
+node_modules/
+.env
+.env.*
+!.env.example
+.next/
+.expo/
+dist/
+coverage/
+playwright-report/
+test-results/
+.cache/
+*.log
+credentials.json
+*.jks
+*.keystore
+.DS_Store
+.vscode/settings.json
+
+# Android is generated from app.config.js so each build receives the correct AdMob App ID.
+/apps/mobile/android/
+/apps/mobile/ios/

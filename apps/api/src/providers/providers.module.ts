@@ -7,10 +7,12 @@ import { DartProvider } from './dart/dart.provider';
 import { SecExternalClient } from './sec/sec.external';
 import { SecProvider } from './sec/sec.provider';
 import { KisMarketProvider } from './kis/kis.provider';
+import { KisHistoryProvider } from './kis-history.provider';
 @Module({
   providers: [
     MarketstackProvider,
     KisMarketProvider,
+    KisHistoryProvider,
     MockMarketProvider,
     ProviderRegistry,
     DartExternalClient,

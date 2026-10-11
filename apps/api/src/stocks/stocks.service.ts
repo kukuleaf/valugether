@@ -78,6 +78,7 @@ export class StocksService {
          c.company_id, c.legal_name, c.display_name as company_name,
          c.country_code, c.dart_corp_code, c.sec_cik, c.industry_code,
          c.sector_code, c.is_financial, c.website_url,
+         to_jsonb(c)->>'business_summary' as business_summary,
          e.market_code, e.exchange_code, e.mic, e.exchange_name,
          e.country_code as exchange_country_code, e.currency_code as exchange_currency_code,
          e.timezone_name
@@ -201,8 +202,32 @@ export class StocksService {
       rows.push(row);
       historyByMetric.set(row.metric_code, rows);
     }
+    const calculatedHistory = historicalIndicators(metricHistory.rows);
+    for (const row of calculatedHistory) {
+      const rows = historyByMetric.get(row.metric_code) ?? [];
+      if (!rows.some((existing) => existing.end_date === row.end_date && existing.period_type === row.period_type)) {
+        rows.push(row);
+        rows.sort((a, b) => b.end_date.localeCompare(a.end_date));
+        historyByMetric.set(row.metric_code, rows);
+      }
+    }
 
-    const metrics = latestMetrics.rows.map((metric) => ({
+    const knownCodes = new Set(latestMetrics.rows.map((metric) => metric.metric_code));
+    const missingCodes = [...new Set(calculatedHistory.map((row) => row.metric_code))]
+      .filter((code) => !knownCodes.has(code));
+    const missingMetrics = missingCodes.length ? await this.db.query(
+      `select metric_code,metric_name_ko,metric_name_en,statement_type,value_type,
+              unit_type,direction_code,formula_text,description
+       from financial_metric where is_active=true and metric_code=any($1::text[])
+       order by display_order,metric_code`,
+      [missingCodes],
+    ) : { rows: [] };
+    const metrics = [...latestMetrics.rows, ...missingMetrics.rows.map((metric) => {
+      const latest = historyByMetric.get(metric.metric_code)?.[0];
+      return { ...metric, numeric_value: latest?.numeric_value ?? null,
+        text_value: null, as_of_date: latest?.end_date ?? null,
+        source_type: 'CALCULATED', calculation_version: 'HISTORY_V1' };
+    })].map((metric) => ({
       ...metric,
       history: historyByMetric.get(metric.metric_code) ?? [],
     }));
@@ -220,4 +245,72 @@ export class StocksService {
       splits: splits.rows,
     };
   }
+}
+
+function historicalIndicators(facts: MetricHistoryRow[]): MetricHistoryRow[] {
+  const periods = new Map<string, Map<string, MetricHistoryRow>>();
+  for (const fact of facts) {
+    if (fact.source_type !== 'DISCLOSURE' || fact.numeric_value == null) continue;
+    const key = `${fact.end_date}|${fact.period_type}`;
+    const metrics = periods.get(key) ?? new Map<string, MetricHistoryRow>();
+    if (!metrics.has(fact.metric_code)) metrics.set(fact.metric_code, fact);
+    periods.set(key, metrics);
+  }
+  const ordered = [...periods.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const result: MetricHistoryRow[] = [];
+  for (const [key, metrics] of ordered) {
+    const [date, periodType] = key.split('|');
+    const get = (code: string) => {
+      const value = metrics.get(code)?.numeric_value;
+      return value == null ? null : Number(value);
+    };
+    const divide = (top: number | null, bottom: number | null, percent = false) =>
+      top == null || bottom == null || bottom === 0 ? null : top / bottom * (percent ? 100 : 1);
+    const previous = ordered.find(([otherKey]) => {
+      const [otherDate, otherType] = otherKey.split('|');
+      return otherType === periodType && Number(otherDate.slice(0, 4)) === Number(date.slice(0, 4)) - 1;
+    })?.[1];
+    const averageBalance = (code: string) => {
+      const current = get(code);
+      const prior = previous?.get(code)?.numeric_value;
+      return current == null || prior == null ? null : (current + Number(prior)) / 2;
+    };
+    const growth = (code: string) => {
+      const current = get(code);
+      const prior = previous?.get(code)?.numeric_value;
+      return current == null || prior == null || Number(prior) === 0
+        ? null : (current - Number(prior)) / Math.abs(Number(prior)) * 100;
+    };
+    const values: Record<string, number | null> = {
+      ROE: divide(get('NET_INCOME'), averageBalance('TOTAL_EQUITY'), true),
+      ROA: divide(get('NET_INCOME'), averageBalance('TOTAL_ASSETS'), true),
+      DEBT_RATIO: divide(get('TOTAL_LIABILITIES'), get('TOTAL_EQUITY'), true),
+      CURRENT_RATIO: divide(get('CURRENT_ASSETS'), get('CURRENT_LIABILITIES')),
+      OPERATING_MARGIN: divide(get('OPERATING_INCOME'), get('REVENUE'), true),
+      NET_MARGIN: divide(get('NET_INCOME'), get('REVENUE'), true),
+      FREE_CASH_FLOW: get('CFO') == null || get('CAPEX') == null ? null : get('CFO')! - Math.abs(get('CAPEX')!),
+      BPS: divide(get('TOTAL_EQUITY'), get('WEIGHTED_AVG_SHARES')),
+      PAYOUT_RATIO: divide(get('DPS'), get('EPS_BASIC'), true),
+      REVENUE_GROWTH_YOY: growth('REVENUE'),
+      OPERATING_INCOME_GROWTH_YOY: growth('OPERATING_INCOME'),
+      NET_INCOME_GROWTH_YOY: growth('NET_INCOME'),
+      EPS_GROWTH_YOY: growth('EPS_BASIC'),
+    };
+    const sample = metrics.values().next().value as MetricHistoryRow | undefined;
+    if (!sample) continue;
+    for (const [metricCode, value] of Object.entries(values)) {
+      if (value == null || !Number.isFinite(value)) continue;
+      result.push({
+        ...sample,
+        metric_code: metricCode,
+        end_date: date,
+        period_type: periodType,
+        numeric_value: String(value),
+        text_value: null,
+        source_type: 'CALCULATED',
+        provider_name: null,
+      });
+    }
+  }
+  return result;
 }

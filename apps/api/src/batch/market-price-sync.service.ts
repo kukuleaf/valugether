@@ -54,6 +54,7 @@ export class MarketPriceSyncService {
       const client = await this.db.connect();
       try {
         await client.query('begin');
+        const changedSecurities = new Set<number>();
         for (const p of prices) {
           await client.query('savepoint price_row');
           try {
@@ -84,14 +85,36 @@ export class MarketPriceSyncService {
               `select 1 from daily_price where security_id=$1 and trade_date=$2 and provider_id=$3`,
               [securityId, p.tradeDate, providerId],
             );
-            await this.upsert(client, securityId, providerId, p);
-            await this.refreshPriceMetrics(client, securityId, p.close, p.tradeDate);
-            existed.rowCount ? updated++ : inserted++;
+            if (!existed.rowCount) {
+              await this.upsert(client, securityId, providerId, p);
+              changedSecurities.add(securityId);
+              inserted++;
+            } else {
+              const newest = await client.query(
+                'select max(trade_date)::text as trade_date from daily_price where security_id=$1',
+                [securityId],
+              );
+              if (newest.rows[0]?.trade_date === p.tradeDate) {
+                await this.upsert(client, securityId, providerId, p);
+                changedSecurities.add(securityId);
+                updated++;
+              } else skipped++;
+            }
             await client.query('release savepoint price_row');
           } catch {
             await client.query('rollback to savepoint price_row');
             await client.query('release savepoint price_row');
             errors++;
+          }
+        }
+        for (const securityId of changedSecurities) {
+          const latest = await client.query(
+            `select trade_date::text,close_price from daily_price where security_id=$1
+             order by trade_date desc,provider_id limit 1`,
+            [securityId],
+          );
+          if (latest.rowCount) {
+            await this.refreshPriceMetrics(client, securityId, Number(latest.rows[0].close_price), latest.rows[0].trade_date);
           }
         }
         await client.query('commit');

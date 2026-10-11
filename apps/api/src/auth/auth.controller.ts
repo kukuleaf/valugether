@@ -10,6 +10,7 @@ import {
   RegisterDto,
   TokenConfirmDto,
   KakaoLoginDto,
+  NaverLoginDto,
 } from './auth.dto';
 import { AccessTokenGuard } from './access-token.guard';
 
@@ -27,6 +28,9 @@ export class AuthController {
   }
   @Post('kakao/login') kakaoLogin(@Body() dto: KakaoLoginDto) {
     return this.auth.kakaoLogin(dto.idToken, dto.nonce, dto.consents);
+  }
+  @Post('naver/login') naverLogin(@Body() dto: NaverLoginDto) {
+    return this.auth.naverLogin(dto.refreshToken, dto.consents);
   }
   @Post('refresh') refresh(@Body() dto: RefreshDto) {
     return this.auth.refresh(dto.refreshToken);

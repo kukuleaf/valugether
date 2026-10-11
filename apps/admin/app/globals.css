@@ -22,6 +22,7 @@ select {
   min-height: 100vh;
 }
 .side {
+  flex-shrink: 0;
   width: 220px;
   background: #fff;
   border-right: 1px solid #e7e9ee;
@@ -47,6 +48,7 @@ select {
 }
 .content {
   flex: 1;
+  min-width: 0;
   padding: 28px;
   max-width: 1300px;
 }
@@ -113,6 +115,12 @@ th {
   border-radius: 9px;
   margin: 6px 0 12px;
 }
+.editor-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .textarea {
   min-height: 180px;
   resize: vertical;
@@ -129,6 +137,7 @@ th {
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 .btn.secondary {
@@ -256,6 +265,25 @@ th {
 }
 .condition-row .field {
   margin-bottom: 0;
+  min-width: 0;
+}
+.condition-row > label {
+  min-width: 0;
+}
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.table-scroll td {
+  overflow-wrap: anywhere;
+}
+@media (min-width: 901px) and (max-width: 1250px) {
+  .split-layout {
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  }
+  .condition-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .form-actions {
   margin-top: 18px;
@@ -306,6 +334,11 @@ th {
 }
 .dialog {
   width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
 }
 .login {
   max-width: 420px;

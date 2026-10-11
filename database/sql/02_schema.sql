@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS company (
   sec_cik           varchar(20),
   industry_code     varchar(80),
   sector_code       varchar(80),
+  business_summary  text,
   is_financial      boolean NOT NULL DEFAULT false,
   website_url       text,
   is_active         boolean NOT NULL DEFAULT true,
@@ -419,6 +420,8 @@ CREATE TABLE IF NOT EXISTS screen_strategy (
   target_user_level varchar(30) NOT NULL DEFAULT 'GENERAL',
   is_active         boolean NOT NULL DEFAULT true,
   display_order     integer NOT NULL DEFAULT 0,
+  sort_metric_code  varchar(80) DEFAULT 'PER' REFERENCES financial_metric(metric_code),
+  sort_direction    varchar(4) NOT NULL DEFAULT 'ASC' CHECK (sort_direction IN ('ASC', 'DESC')),
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now()
 );

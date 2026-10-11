@@ -15,3 +15,6 @@ credentials.json
 *.keystore
 .DS_Store
 .vscode/settings.json
+# Generated native files can contain per-build SDK credentials.
+/apps/mobile/android/
+/apps/mobile/ios/

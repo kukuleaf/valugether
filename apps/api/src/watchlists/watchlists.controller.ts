@@ -4,20 +4,21 @@ import {
   Delete,
   Get,
   Inject,
+  NotFoundException,
   Param,
   ParseIntPipe,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { Pool } from 'pg';
 import { DB_POOL } from '../common/database/database.module';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AuditService } from '../audit/audit.service';
 
 class AddWatchDto {
-  @IsInt() securityId!: number;
+  @IsInt() @Min(1) securityId!: number;
   @IsOptional() @IsString() @MaxLength(500) memo?: string;
 }
 
@@ -48,11 +49,13 @@ export class WatchlistsController {
       [req.user.sub],
     );
     if (!w.rowCount) throw new Error('default watchlist missing');
-    await this.db.query(
-      `insert into watchlist_item(watchlist_id,security_id,memo) values($1,$2,$3)
+    const added = await this.db.query(
+      `insert into watchlist_item(watchlist_id,security_id,memo)
+      select $1,s.security_id,$3 from security s where s.security_id=$2 and s.is_active=true
       on conflict(watchlist_id,security_id) do update set memo=excluded.memo`,
       [w.rows[0].watchlist_id, dto.securityId, dto.memo ?? null],
     );
+    if (!added.rowCount) throw new NotFoundException('종목을 찾을 수 없습니다.');
     await this.audit.write({
       actorUserId: req.user.sub,
       actionCode: 'WATCHLIST_CHANGE',

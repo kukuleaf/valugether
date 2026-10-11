@@ -47,11 +47,28 @@ export class ScreeningService {
   async search(dto: ScreenSearchDto, userId?: string, recordHistory = true) {
     const started = Date.now();
     let conditions = dto.conditions ?? [];
+    let sortMetricCode: string | null = null;
+    let sortDirection: 'ASC' | 'DESC' = 'ASC';
     if (dto.strategyCode) {
-      conditions = await this.loadStrategy(dto.strategyCode);
+      const strategy = await this.loadStrategy(dto.strategyCode);
+      conditions = strategy.conditions;
+      sortMetricCode = strategy.sortMetricCode;
+      sortDirection = strategy.sortDirection;
     }
     if (!conditions.length) throw new BadRequestException('검색 조건이 필요합니다.');
+    if (
+      conditions.some(
+        (condition) =>
+          condition.operator === 'BETWEEN' &&
+          (condition.target2 == null || condition.target > condition.target2),
+      )
+    ) {
+      throw new BadRequestException('범위 조건의 최솟값과 최댓값을 확인하세요.');
+    }
     const metricCodes = [...new Set(conditions.map((c) => c.metricCode))];
+    const queryMetricCodes = sortMetricCode
+      ? [...new Set([...metricCodes, sortMetricCode])]
+      : metricCodes;
     const meta = await this.loadMetricMeta(metricCodes);
     if (meta.size !== metricCodes.length) {
       const missing = metricCodes.filter((x) => !meta.has(x));
@@ -71,21 +88,30 @@ export class ScreeningService {
          and ($3::text[] is null or e.exchange_code=any($3::text[]))
          and ($4::boolean=false or c.is_financial=false)
        order by s.security_id`,
-      [metricCodes, marketCodes, exchangeCodes, Boolean(dto.strategyCode)],
+      [queryMetricCodes, marketCodes, exchangeCodes, Boolean(dto.strategyCode)],
     );
 
     const bySecurity = new Map<number, any>();
     for (const r of rows.rows) {
-      const x = bySecurity.get(r.security_id) ?? {
-        securityId: r.security_id,
+      const securityId = Number(r.security_id);
+      const x = bySecurity.get(securityId) ?? {
+        securityId,
         ticker: r.ticker,
         name: r.security_name,
         marketCode: r.market_code,
         exchangeCode: r.exchange_code,
         values: {},
       };
-      x.values[r.metric_code] = { value: Number(r.numeric_value), asOfDate: r.as_of_date };
-      bySecurity.set(r.security_id, x);
+      const numericValue = r.numeric_value == null ? null : Number(r.numeric_value);
+      const invalidValuation =
+        dto.strategyCode &&
+        ['PER', 'PBR'].includes(r.metric_code) &&
+        (numericValue == null || numericValue <= 0);
+      x.values[r.metric_code] = {
+        value: Number.isFinite(numericValue) && !invalidValuation ? numericValue : null,
+        asOfDate: r.as_of_date,
+      };
+      bySecurity.set(securityId, x);
     }
 
     const results: any[] = [];
@@ -155,13 +181,25 @@ export class ScreeningService {
         });
       }
     }
+    const compareConfiguredMetric = (a: any, b: any) => {
+      if (!sortMetricCode) return 0;
+      const aValue = a.values[sortMetricCode]?.value;
+      const bValue = b.values[sortMetricCode]?.value;
+      const aPresent = Number.isFinite(aValue);
+      const bPresent = Number.isFinite(bValue);
+      if (aPresent !== bPresent) return aPresent ? -1 : 1;
+      if (!aPresent) return 0;
+      return sortDirection === 'ASC' ? aValue - bValue : bValue - aValue;
+    };
     results.sort(
       (a, b) =>
         (a.matchType === b.matchType
           ? b.similarity - a.similarity
           : a.matchType === 'EXACT'
             ? -1
-            : 1) || a.ticker.localeCompare(b.ticker),
+            : 1) ||
+        compareConfiguredMetric(a, b) ||
+        a.ticker.localeCompare(b.ticker),
     );
     const exactCount = results.filter((x) => x.matchType === 'EXACT').length;
     const nearCount = results.length - exactCount;
@@ -254,23 +292,32 @@ export class ScreeningService {
     return { deletedCount: result.rowCount ?? 0 };
   }
 
-  private async loadStrategy(code: string): Promise<ScreenConditionDto[]> {
+  private async loadStrategy(code: string): Promise<{
+    conditions: ScreenConditionDto[];
+    sortMetricCode: string | null;
+    sortDirection: 'ASC' | 'DESC';
+  }> {
     const r = await this.db.query(
-      `select m.metric_code,c.operator_code,c.target_value,c.target_value2,c.weight,c.required
+      `select s.sort_metric_code,s.sort_direction,
+              m.metric_code,c.operator_code,c.target_value,c.target_value2,c.weight,c.required
        from screen_strategy s join screen_strategy_condition c on c.strategy_id=s.strategy_id
        join financial_metric m on m.metric_id=c.metric_id
        where s.strategy_code=$1 and s.is_active=true order by c.display_order`,
       [code],
     );
     if (!r.rowCount) throw new BadRequestException('전략을 찾을 수 없습니다.');
-    return r.rows.map((x) => ({
-      metricCode: x.metric_code,
-      operator: x.operator_code,
-      target: Number(x.target_value),
-      target2: x.target_value2 == null ? undefined : Number(x.target_value2),
-      weight: Number(x.weight),
-      required: x.required,
-    }));
+    return {
+      sortMetricCode: r.rows[0].sort_metric_code,
+      sortDirection: r.rows[0].sort_direction,
+      conditions: r.rows.map((x) => ({
+        metricCode: x.metric_code,
+        operator: x.operator_code,
+        target: Number(x.target_value),
+        target2: x.target_value2 == null ? undefined : Number(x.target_value2),
+        weight: Number(x.weight),
+        required: x.required,
+      })),
+    };
   }
 
   private async loadMetricMeta(codes: string[]) {

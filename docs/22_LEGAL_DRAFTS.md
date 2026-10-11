@@ -44,6 +44,7 @@ npm run db:legal-drafts
 - refresh/인증/비밀번호 재설정 token 해시
 - 요청 ID, 감사·오류·배치 기록, 해시된 IP 기반 rate-limit key
 - 이메일 발송 상태
+- Android 광고를 켠 경우 Google Mobile Ads SDK의 IP 주소, 광고 관련 식별자, 광고 이용·진단 정보. 앱은 이메일·검색 조건·관심기업 목록을 광고 요청에 전달하지 않습니다. 비개인화 광고도 일부 정보를 처리할 수 있습니다.
 
 실명, 전화번호, 주소, 주민번호, 증권계좌와 투자자산 규모는 현재 수집하지 않습니다.
 
@@ -52,6 +53,13 @@ npm run db:legal-drafts
 - 개인정보 처리방침 공개와 정보주체 권리는 [국가법령정보센터 개인정보 보호법](https://www.law.go.kr/법령/개인정보보호법)의 최신 조문을 기준으로 최종 검토합니다.
 - Google Play는 개인정보처리방침과 Data safety 작성을 요구하며, 계정 생성 앱에는 앱 내부 삭제 경로와 웹 삭제 요청 경로가 필요합니다. [User Data 정책](https://support.google.com/googleplay/android-developer/answer/10144311), [계정 삭제 요구사항](https://support.google.com/googleplay/android-developer/answer/13327111)
 - 광고·로그인 SDK를 추가한 뒤에는 해당 SDK가 수집·공유하는 항목까지 포함해 Data safety와 처리방침을 다시 대조합니다. [Data safety 작성 안내](https://support.google.com/googleplay/android-developer/answer/10787469)
+- Google Mobile Ads의 자동 수집 항목은 [SDK Data safety 안내](https://developers.google.com/admob/android/privacy/play-data-disclosure)와 실제 SDK 버전·동의 구성으로 대조합니다. 앱의 `내 정보 > 개인정보 처리방침`에서 게시 방침과 광고 안내를 확인할 수 있고, Google UMP가 요구할 때 광고 개인정보 선택을 다시 열 수 있습니다.
+
+### 광고 안내 추가 초안
+
+아래 내용은 기존 관리자 문서를 자동으로 덮어쓰거나 게시하지 않습니다. 운영자는 실제 Google 계약과 처리 구조, 국외 이전 국가·항목·방법·기간·거부 방법을 확정한 뒤 게시할 방침에 반영해야 합니다.
+
+> 이 앱은 Google AdMob 배너 광고를 제공합니다. Google Mobile Ads SDK는 광고 제공, 성능 분석 및 부정 이용 방지를 위해 IP 주소, 광고 관련 기기 식별자, 광고 이용 및 진단 정보를 처리할 수 있습니다. 앱은 회원의 이메일, 검색 조건과 관심기업 목록을 광고 요청에 전달하지 않습니다. 앱은 비개인화 광고를 요청하지만, 비개인화 광고에도 일부 기기 정보의 처리가 필요할 수 있습니다. 필요한 지역에서는 Google 동의 화면에서 선택을 확인하고, 앱의 광고 개인정보 선택 메뉴에서 선택을 변경할 수 있습니다. Android 광고 ID는 기기 설정에서 재설정하거나 삭제할 수 있습니다. 실제 제공받는 자 및 국외 이전 사항은 [운영자 확인 내용]에 따릅니다.
 
 ## 데이터 이용조건 내부 확인
 

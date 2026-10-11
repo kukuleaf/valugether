@@ -18,8 +18,11 @@
     "build": "npm --workspace apps/api run build && npm --workspace apps/admin run build",
     "test:e2e": "npm --workspace apps/api run test:e2e",
     "test:kakao": "npm --workspace apps/api run test:kakao",
+    "test:naver": "npm --workspace apps/api run test:naver",
     "test:batch": "npm --workspace apps/api run test:batch",
     "test:queue": "npm --workspace apps/api run test:queue",
+    "test:ads": "npm --workspace apps/mobile run test:ads",
+    "test:social": "npm --workspace apps/mobile run test:social",
     "test:ui:e2e": "npm --workspace apps/api run build --silent && npm --workspace apps/admin run build --silent && npm --workspace apps/mobile run export:web:e2e --silent && node tools/run-ui-e2e.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -31,14 +34,16 @@
     "db:data-quality": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/15_data_quality.sql",
     "db:legal-drafts": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/16_legal_drafts.sql",
     "db:kakao-auth": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/17_kakao_auth.sql",
+    "db:company-summaries": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/18_company_summary.sql",
+    "db:strategy-sort": "node --env-file=apps/api/.env tools/run-sql.mjs database/sql/19_strategy_sort.sql",
     "db:backup-check": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-db-backup-restore.ps1"
   },
   "devDependencies": {
-    "@nestjs/platform-express": "11.2.3",
+    "@nestjs/platform-express": "11.2.7",
     "@playwright/test": "^1.63.0",
     "prettier": "^3.6.2"
   },
   "overrides": {
-    "multer": "2.3.0"
+    "multer": "2.4.0"
   }
 }

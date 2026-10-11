@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Shell } from '../../components/Shell';
+import { adminRequest, errorMessage } from '../../lib/api-client';
+import { ResourceFeedback } from '../../components/ResourceFeedback';
 
 type Notice = {
   notice_id: number;
@@ -26,12 +28,19 @@ export default function NoticesPage() {
   const [form, setForm] = useState<NoticeForm>(emptyForm);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const response = await fetch('/api/admin/notices');
-    const body = await response.json();
-    if (!response.ok) return setMessage(messageOf(body, '공지 목록을 불러오지 못했습니다.'));
-    setRows(body);
+    setLoading(true);
+    setLoadError('');
+    try {
+      setRows(await adminRequest<Notice[]>('/api/admin/notices'));
+    } catch (error) {
+      setLoadError(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -40,27 +49,27 @@ export default function NoticesPage() {
 
   async function save() {
     if (saving) return;
+    if (form.startsAt && form.endsAt && new Date(form.startsAt) >= new Date(form.endsAt)) {
+      return setMessage('게시 종료는 시작 이후로 설정하세요.');
+    }
     setSaving(true);
     setMessage('');
     try {
-      const response = await fetch(
-        form.id ? `/api/admin/notices/${form.id}` : '/api/admin/notices',
-        {
-          method: form.id ? 'PATCH' : 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            title: form.title,
-            body: form.body,
-            startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
-            endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
-          }),
-        },
-      );
-      const body = await response.json();
-      if (!response.ok) return setMessage(messageOf(body, '저장하지 못했습니다.'));
+      await adminRequest(form.id ? `/api/admin/notices/${form.id}` : '/api/admin/notices', {
+        method: form.id ? 'PATCH' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: form.title,
+          body: form.body,
+          startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
+          endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
+        }),
+      });
       setForm(emptyForm);
       setMessage(form.id ? '공지를 수정했습니다.' : '공지를 작성 중 상태로 저장했습니다.');
       await load();
+    } catch (error) {
+      setMessage(errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -79,19 +88,25 @@ export default function NoticesPage() {
   }
 
   async function action(notice: Notice, kind: 'publish' | 'archive' | 'delete') {
+    if (saving) return;
     const labels = { publish: '게시', archive: '보관', delete: '삭제' };
     if (!window.confirm(`“${notice.title}” 공지를 ${labels[kind]}할까요?`)) return;
-    const response = await fetch(
-      kind === 'delete'
-        ? `/api/admin/notices/${notice.notice_id}`
-        : `/api/admin/notices/${notice.notice_id}/${kind}`,
-      { method: kind === 'delete' ? 'DELETE' : 'POST' },
-    );
-    const body = await response.json();
-    if (!response.ok) return setMessage(messageOf(body, `${labels[kind]}하지 못했습니다.`));
-    if (form.id === notice.notice_id) setForm(emptyForm);
-    setMessage(`${labels[kind]}했습니다.`);
-    await load();
+    setSaving(true);
+    try {
+      await adminRequest(
+        kind === 'delete'
+          ? `/api/admin/notices/${notice.notice_id}`
+          : `/api/admin/notices/${notice.notice_id}/${kind}`,
+        { method: kind === 'delete' ? 'DELETE' : 'POST' },
+      );
+      if (form.id === notice.notice_id) setForm(emptyForm);
+      setMessage(`${labels[kind]}했습니다.`);
+      await load();
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -102,58 +117,67 @@ export default function NoticesPage() {
       </p>
 
       <section className="card form-card notice-form">
-        <div className="editor-heading">
-          <h2>{form.id ? '공지 수정' : '새 공지'}</h2>
-          {form.id && (
-            <button className="btn secondary" onClick={() => setForm(emptyForm)}>
-              새 공지로 전환
-            </button>
-          )}
-        </div>
-        <label>제목</label>
-        <input
-          className="field"
-          maxLength={250}
-          value={form.title}
-          onChange={(event) => setForm({ ...form, title: event.target.value })}
-        />
-        <label>내용</label>
-        <textarea
-          className="field textarea"
-          maxLength={10000}
-          value={form.body}
-          onChange={(event) => setForm({ ...form, body: event.target.value })}
-        />
-        <div className="inline-fields">
-          <label>
-            게시 시작 (비우면 게시 즉시)
-            <input
-              className="field"
-              type="datetime-local"
-              value={form.startsAt}
-              onChange={(event) => setForm({ ...form, startsAt: event.target.value })}
-            />
-          </label>
-          <label>
-            게시 종료 (선택)
-            <input
-              className="field"
-              type="datetime-local"
-              value={form.endsAt}
-              onChange={(event) => setForm({ ...form, endsAt: event.target.value })}
-            />
-          </label>
-        </div>
-        <button
-          className="btn"
-          disabled={saving || !form.title.trim() || !form.body.trim()}
-          onClick={save}
-        >
-          {saving ? '저장 중…' : form.id ? '수정 저장' : '작성 중으로 저장'}
-        </button>
+        <fieldset className="editor-fields" disabled={saving}>
+          <div className="editor-heading">
+            <h2>{form.id ? '공지 수정' : '새 공지'}</h2>
+            {form.id && (
+              <button className="btn secondary" onClick={() => setForm(emptyForm)}>
+                새 공지로 전환
+              </button>
+            )}
+          </div>
+          <label htmlFor="notice-title">제목</label>
+          <input
+            id="notice-title"
+            className="field"
+            maxLength={250}
+            value={form.title}
+            onChange={(event) => setForm({ ...form, title: event.target.value })}
+          />
+          <label htmlFor="notice-body">내용</label>
+          <textarea
+            id="notice-body"
+            className="field textarea"
+            maxLength={10000}
+            value={form.body}
+            onChange={(event) => setForm({ ...form, body: event.target.value })}
+          />
+          <div className="inline-fields">
+            <label>
+              게시 시작 (비우면 게시 즉시)
+              <input
+                className="field"
+                type="datetime-local"
+                value={form.startsAt}
+                onChange={(event) => setForm({ ...form, startsAt: event.target.value })}
+              />
+            </label>
+            <label>
+              게시 종료 (선택)
+              <input
+                className="field"
+                type="datetime-local"
+                value={form.endsAt}
+                onChange={(event) => setForm({ ...form, endsAt: event.target.value })}
+              />
+            </label>
+          </div>
+          <button
+            className="btn"
+            disabled={saving || !form.title.trim() || !form.body.trim()}
+            onClick={save}
+          >
+            {saving ? '저장 중…' : form.id ? '수정 저장' : '작성 중으로 저장'}
+          </button>
+        </fieldset>
       </section>
 
-      {message && <p className="feedback">{message}</p>}
+      {message && (
+        <p className="feedback" role="status">
+          {message}
+        </p>
+      )}
+      <ResourceFeedback error={loadError} loading={loading} retry={load} />
 
       <div className="notice-list">
         {rows.map((notice) => (
@@ -174,22 +198,34 @@ export default function NoticesPage() {
             </p>
             <div className="actions">
               {notice.status_code !== 'ARCHIVED' && (
-                <button className="btn secondary" onClick={() => edit(notice)}>
+                <button className="btn secondary" disabled={saving} onClick={() => edit(notice)}>
                   수정
                 </button>
               )}
               {notice.status_code === 'DRAFT' && (
                 <>
-                  <button className="btn" onClick={() => action(notice, 'publish')}>
+                  <button
+                    className="btn"
+                    disabled={saving}
+                    onClick={() => action(notice, 'publish')}
+                  >
                     게시
                   </button>
-                  <button className="btn danger" onClick={() => action(notice, 'delete')}>
+                  <button
+                    className="btn danger"
+                    disabled={saving}
+                    onClick={() => action(notice, 'delete')}
+                  >
                     삭제
                   </button>
                 </>
               )}
               {notice.status_code === 'PUBLISHED' && (
-                <button className="btn danger" onClick={() => action(notice, 'archive')}>
+                <button
+                  className="btn danger"
+                  disabled={saving}
+                  onClick={() => action(notice, 'archive')}
+                >
                   게시 종료
                 </button>
               )}
@@ -210,9 +246,4 @@ function toLocalInput(value: string | null) {
 
 function statusLabel(status: Notice['status_code']) {
   return status === 'DRAFT' ? '작성 중' : status === 'PUBLISHED' ? '게시 중' : '보관';
-}
-
-function messageOf(body: any, fallback: string) {
-  const message = body?.message ?? fallback;
-  return Array.isArray(message) ? message.join(', ') : String(message);
 }

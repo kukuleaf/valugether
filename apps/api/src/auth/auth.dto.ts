@@ -10,6 +10,7 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 
@@ -56,11 +57,24 @@ export class DeleteAccountDto {
   @IsOptional() @IsString() @MaxLength(8192) kakaoIdToken?: string;
   @IsOptional() @IsString() @MaxLength(4096) kakaoAccessToken?: string;
   @IsOptional() @IsString() @MaxLength(128) kakaoNonce?: string;
+  @IsOptional() @IsString() @MinLength(20) @MaxLength(4096)
+  @Matches(/^[A-Za-z0-9+/_=-]+$/) naverRefreshToken?: string;
 }
 
 export class KakaoLoginDto {
   @IsString() @MinLength(20) @MaxLength(8192) idToken!: string;
   @IsString() @MinLength(20) @MaxLength(128) nonce!: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => ConsentDto)
+  consents?: ConsentDto[];
+}
+
+export class NaverLoginDto {
+  @IsString() @MinLength(20) @MaxLength(4096)
+  @Matches(/^[A-Za-z0-9+/_=-]+$/) refreshToken!: string;
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(30)

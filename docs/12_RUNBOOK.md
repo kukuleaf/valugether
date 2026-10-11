@@ -33,9 +33,21 @@ psql -h localhost -p 5433 -U postgres -d postgres -f database/sql/00_create_data
 그 후:
 
 ```bash
-for f in database/sql/{0[1-9],1[0-6]}_*.sql; do
+for f in database/sql/{0[1-9],1[0-8]}_*.sql; do
   psql -h localhost -p 5433 -U stock_app -d stock_screener -f "$f"
 done
+```
+
+기존 로컬 데이터베이스에서 기업 소개 칼럼만 추가할 때:
+
+```bash
+npm run db:company-summaries
+```
+
+기존 데이터베이스에 전략별 결과 정렬 설정을 추가할 때:
+
+```bash
+npm run db:strategy-sort
 ```
 
 개발 편의를 위한 password는 docker-compose에 들어있으므로 운영에서 절대 그대로 사용하지 않습니다.

@@ -18,7 +18,7 @@ export class ScreenConditionDto {
     'LTE' | 'LT' | 'GTE' | 'GT' | 'EQ' | 'BETWEEN';
   @IsNumber() target!: number;
   @IsOptional() @IsNumber() target2?: number;
-  @IsOptional() @IsNumber() @Min(0.01) weight?: number;
+  @IsOptional() @IsNumber() @Min(0.01) @Max(100) weight?: number;
   @IsOptional() @IsBoolean() required?: boolean;
 }
 export class ScreenSearchDto {
@@ -31,7 +31,7 @@ export class ScreenSearchDto {
   @ValidateNested({ each: true })
   @Type(() => ScreenConditionDto)
   conditions?: ScreenConditionDto[];
-  @IsOptional() @IsNumber() @Min(1) @Max(200) limit?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(200) limit?: number;
 }
 
 export class SearchHistoryQueryDto {

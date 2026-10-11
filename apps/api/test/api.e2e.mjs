@@ -7,6 +7,11 @@ require('reflect-metadata');
 const argon2 = require('argon2');
 const { NestFactory } = require('@nestjs/core');
 const { AppModule } = require('../dist/src/app.module.js');
+const { AdminStrategiesService } = require('../dist/src/admin/admin-strategies.service.js');
+const { ScreeningService } = require('../dist/src/screening/screening.service.js');
+const { AuthService } = require('../dist/src/auth/auth.service.js');
+const { PresetsController } = require('../dist/src/presets/presets.controller.js');
+const { newOpaqueToken, hashToken } = require('../dist/src/auth/token.util.js');
 const { DB_POOL } = require('../dist/src/common/database/database.module.js');
 const { configureHttp, corsAllowedOrigins } = require('../dist/src/common/http/configure-http.js');
 
@@ -147,6 +152,11 @@ test('public catalog endpoints', async () => {
   assert.equal(notices.response.status, 200);
   assert.ok(Array.isArray(notices.body));
 
+  for (const limit of ['invalid', '-1', '1.5', '201']) {
+    const invalidStocks = await request(`/stocks?limit=${limit}`);
+    assert.equal(invalidStocks.response.status, 400, `invalid stock limit ${limit}`);
+  }
+
   const allowedPreflight = await fetch(`${baseUrl}/health`, {
     method: 'OPTIONS',
     headers: {
@@ -285,6 +295,14 @@ test('search history, watchlist, preset, and notification settings', async () =>
     );
     assert.equal(advanced.response.status, 201, `${operatorCase.operator} search failed`);
     assert.ok(advanced.body.results.length > 0, `${operatorCase.operator} returned no results`);
+    if (operatorCase.operator === 'EQ') {
+      const matchingStock = advanced.body.results.find(
+        (result) => result.securityId === Number(metricSample.rows[0].security_id),
+      );
+      assert.ok(matchingStock, 'the exact source stock must appear in the result');
+      assert.equal(matchingStock.priceStatus, stockDetail.body.price_status);
+      assert.equal(matchingStock.priceAsOfDate, stockDetail.body.latest_price?.trade_date ?? null);
+    }
     for (const result of advanced.body.results) {
       assert.equal(result.exchangeCode, exchangeCode);
       assert.equal(result.details[0].operator, operatorCase.operator);
@@ -359,6 +377,16 @@ test('search history, watchlist, preset, and notification settings', async () =>
   );
   assert.equal(removeWatch.response.status, 200);
 
+  const missingWatch = await request(
+    '/watchlists/default/items',
+    {
+      method: 'POST',
+      body: { securityId: 9007199254740991 },
+    },
+    token,
+  );
+  assert.equal(missingWatch.response.status, 404);
+
   const createdPreset = await request(
     '/presets',
     {
@@ -406,7 +434,7 @@ test('search history, watchlist, preset, and notification settings', async () =>
   assert.equal(settings.body.custom_company_enabled, true);
   assert.equal(settings.body.notification_interval_days, 3);
 
-  const serverError = await request(
+  const invalidPreset = await request(
     '/presets',
     {
       method: 'POST',
@@ -418,6 +446,47 @@ test('search history, watchlist, preset, and notification settings', async () =>
     },
     token,
   );
+  assert.equal(invalidPreset.response.status, 400);
+  for (const conditions of [
+    [],
+    [{ metricCode: 'PER', operator: 'INVALID', target: 1 }],
+    [{ metricCode: 'PER', operator: 'BETWEEN', target: 20, target2: 10 }],
+    [{ metricCode: 'PER', operator: 'LTE', target: 15, weight: -1 }],
+  ]) {
+    const invalid = await request(
+      '/presets',
+      {
+        method: 'POST',
+        body: { name: `E2E invalid preset ${stamp}`, conditions },
+      },
+      token,
+    );
+    assert.equal(invalid.response.status, 400);
+  }
+  const persistedPresets = await request('/presets', {}, token);
+  assert.equal(persistedPresets.body.length, 1, 'invalid conditions must not be persisted');
+
+  const controller = app.get(PresetsController);
+  const originalPersistPreset = controller.persistPreset;
+  let serverError;
+  try {
+    controller.persistPreset = async () => {
+      throw new Error('E2E injected server failure');
+    };
+    serverError = await request(
+      '/presets',
+      {
+        method: 'POST',
+        body: {
+          name: `E2E server failure ${stamp}`,
+          conditions: [{ metricCode: 'PER', operator: 'LTE', target: 15 }],
+        },
+      },
+      token,
+    );
+  } finally {
+    controller.persistPreset = originalPersistPreset;
+  }
   assert.equal(serverError.response.status, 500);
   assert.equal(serverError.body.message, '서버 오류가 발생했습니다.');
   assert.equal(serverError.body.requestId, serverError.response.headers.get('x-request-id'));
@@ -433,6 +502,112 @@ test('search history, watchlist, preset, and notification settings', async () =>
 
   const deletePreset = await request(`/presets/${presetId}`, { method: 'DELETE' }, token);
   assert.equal(deletePreset.response.status, 200);
+});
+
+test('a refresh token rotates once under concurrency and admin revocation is immediate', async () => {
+  const auth = app.get(AuthService);
+  const login = await auth.login(email, password);
+  const attempts = await Promise.allSettled([
+    auth.refresh(login.refreshToken),
+    auth.refresh(login.refreshToken),
+    auth.refresh(login.refreshToken),
+  ]);
+  assert.equal(attempts.filter((attempt) => attempt.status === 'fulfilled').length, 1);
+  for (const rejected of attempts.filter((attempt) => attempt.status === 'rejected')) {
+    assert.equal(rejected.reason.getStatus(), 401);
+  }
+
+  await db.query("insert into user_role(user_id,role_code) values($1,'ADMIN')", [userId]);
+  let adminLogin;
+  try {
+    adminLogin = await auth.login(email, password);
+    const allowed = await request('/admin/dashboard', {}, adminLogin.accessToken);
+    assert.equal(allowed.response.status, 200);
+  } finally {
+    await db.query("delete from user_role where user_id=$1 and role_code='ADMIN'", [userId]);
+  }
+  const denied = await request('/admin/dashboard', {}, adminLogin.accessToken);
+  assert.equal(denied.response.status, 403);
+});
+
+test('an email verification link cannot reactivate a suspended account', async () => {
+  const verificationToken = newOpaqueToken();
+  await db.query(
+    `insert into verification_token(user_id,token_hash,purpose_code,expires_at)
+     values($1,$2,'EMAIL_VERIFY',now()+interval '30 minutes')`,
+    [userId, hashToken(verificationToken)],
+  );
+  try {
+    await db.query("update app_user set status_code='SUSPENDED' where user_id=$1", [userId]);
+    await assert.rejects(
+      app.get(AuthService).confirmEmailVerification(verificationToken),
+      (error) => error.getStatus() === 400,
+    );
+    const user = await db.query('select status_code from app_user where user_id=$1', [userId]);
+    assert.equal(user.rows[0].status_code, 'SUSPENDED');
+  } finally {
+    await db.query("update app_user set status_code='ACTIVE' where user_id=$1", [userId]);
+    await db.query('delete from verification_token where token_hash=$1', [
+      hashToken(verificationToken),
+    ]);
+  }
+});
+
+test('admin-configured strategy sort is persisted and used by screening', async () => {
+  const code = `E2E_SORT_${stamp}`;
+  let strategyId;
+  try {
+    const created = await db.query(
+      `insert into screen_strategy(strategy_code,strategy_name,description,display_order,
+                                   sort_metric_code,sort_direction)
+       values($1,'E2E sort','temporary sorting test',999,'PER','ASC')
+       returning strategy_id`,
+      [code],
+    );
+    strategyId = Number(created.rows[0].strategy_id);
+    await db.query(
+      `insert into screen_strategy_condition(strategy_id,metric_id,operator_code,target_value,weight,required)
+       select $1,metric_id,'LTE',100000,1,true from financial_metric where metric_code='PER'`,
+      [strategyId],
+    );
+
+    const changed = await app.get(AdminStrategiesService).update(userId, strategyId, {
+      name: 'E2E sort',
+      description: 'temporary sorting test',
+      isActive: true,
+      displayOrder: 999,
+      sortMetricCode: 'ROE',
+      sortDirection: 'DESC',
+      conditions: [
+        { metricCode: 'PER', operator: 'LTE', target: 100000, weight: 1, required: true },
+      ],
+    });
+    assert.equal(changed.sortMetricCode, 'ROE');
+    assert.equal(changed.sortDirection, 'DESC');
+    const persisted = await db.query(
+      'select sort_metric_code,sort_direction from screen_strategy where strategy_id=$1',
+      [strategyId],
+    );
+    assert.equal(persisted.rows[0].sort_metric_code, 'ROE');
+    assert.equal(persisted.rows[0].sort_direction, 'DESC');
+
+    const search = await app
+      .get(ScreeningService)
+      .search({ strategyCode: code, limit: 50 }, undefined, false);
+    for (let index = 1; index < search.results.length; index++) {
+      const previous = search.results[index - 1];
+      const current = search.results[index];
+      if (previous.matchType !== current.matchType || previous.similarity !== current.similarity)
+        continue;
+      const previousValue = previous.values.ROE?.value;
+      const currentValue = current.values.ROE?.value;
+      if (!Number.isFinite(previousValue)) assert.equal(Number.isFinite(currentValue), false);
+      else if (Number.isFinite(currentValue)) assert.ok(previousValue >= currentValue);
+    }
+  } finally {
+    if (strategyId)
+      await db.query('delete from screen_strategy where strategy_id=$1', [strategyId]);
+  }
 });
 
 async function request(path, init = {}, accessToken) {

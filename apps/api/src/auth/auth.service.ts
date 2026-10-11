@@ -18,6 +18,7 @@ import { AuditService } from '../audit/audit.service';
 import { hashToken, newOpaqueToken } from './token.util';
 import { ConsentDto, DeleteAccountDto } from './auth.dto';
 import { KakaoIdentity, KakaoOidcService } from './kakao-oidc.service';
+import { NaverIdentity, NaverOAuthService } from './naver-oauth.service';
 
 @Injectable()
 export class AuthService {
@@ -30,6 +31,7 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly mail: MailService,
     private readonly kakao: KakaoOidcService,
+    private readonly naver: NaverOAuthService,
   ) {}
 
   async register(email: string, password: string, consents: ConsentDto[]) {
@@ -264,25 +266,117 @@ export class AuthService {
     return this.issueTokens(userId, await this.loadRoles(userId));
   }
 
+  async naverLogin(refreshToken: string, consents?: ConsentDto[]) {
+    const identity = await this.naver.verify(refreshToken);
+    const client = await this.db.connect();
+    let userId: string;
+    let created = false;
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        `social:NAVER:${identity.subject}`,
+      ]);
+      const linked = await client.query(
+        `select u.user_id,u.status_code
+         from user_social_account sa join app_user u on u.user_id=sa.user_id
+         where sa.provider_code='NAVER' and sa.provider_subject=$1 and u.deleted_at is null
+         for update of u,sa`,
+        [identity.subject],
+      );
+      if (linked.rowCount) {
+        if (linked.rows[0].status_code !== 'ACTIVE') {
+          throw new UnauthorizedException('사용할 수 없는 계정입니다.');
+        }
+        userId = linked.rows[0].user_id;
+        await client.query(
+          `update user_social_account set provider_email=$2,updated_at=now()
+           where provider_code='NAVER' and provider_subject=$1`,
+          [identity.subject, identity.email],
+        );
+        await client.query(
+          'update app_user set last_login_at=now(),updated_at=now() where user_id=$1',
+          [userId],
+        );
+      } else {
+        if (!consents) {
+          await client.query('rollback');
+          return { consentRequired: true };
+        }
+        const activeTerms = await this.validateSocialConsents(client, consents);
+        const user = await client.query(
+          `insert into app_user(email,status_code,last_login_at)
+           values(null,'ACTIVE',now()) returning user_id`,
+        );
+        userId = user.rows[0].user_id;
+        // Provider email is display-only. Never link a password/Kakao account by
+        // email, and never require optional Naver profile fields for registration.
+        await client.query(
+          `insert into user_social_account(user_id,provider_code,provider_subject,provider_email)
+           values($1,'NAVER',$2,$3)`,
+          [userId, identity.subject, identity.email],
+        );
+        await client.query("insert into user_role(user_id,role_code) values ($1,'USER')", [userId]);
+        const answers = new Map(consents.map((item) => [item.termId, item.agreed]));
+        for (const term of activeTerms) {
+          const termId = Number(term.term_id);
+          await client.query(
+            `insert into user_consent(user_id,consent_type,version,agreed,term_id)
+             values($1,$2,$3,$4,$5)`,
+            [userId, term.term_code, term.version, answers.get(termId) ?? false, termId],
+          );
+        }
+        await client.query(
+          "insert into watchlist(user_id,watchlist_name,is_default) values ($1,'관심종목',true)",
+          [userId],
+        );
+        created = true;
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+    await this.audit.write({
+      actorUserId: userId,
+      actionCode: created ? 'AUTH_REGISTER' : 'AUTH_LOGIN_SUCCESS',
+      targetType: 'USER',
+      targetId: userId,
+    });
+    return this.issueTokens(userId, await this.loadRoles(userId));
+  }
+
   async refresh(refreshToken: string) {
     const tokenHash = hashToken(refreshToken);
-    const result = await this.db.query(
-      `select rt.refresh_token_id,rt.user_id,
-              coalesce(array_agg(ur.role_code) filter (where ur.role_code is not null),'{}') roles
-       from user_refresh_token rt
-       join app_user u on u.user_id=rt.user_id and u.status_code='ACTIVE' and u.deleted_at is null
-       left join user_role ur on ur.user_id=u.user_id
-       where rt.token_hash=$1 and rt.revoked_at is null and rt.expires_at > now()
-       group by rt.refresh_token_id,rt.user_id`,
-      [tokenHash],
-    );
-    const row = result.rows[0];
-    if (!row) throw new UnauthorizedException('유효하지 않은 refresh token입니다.');
-    await this.db.query(
-      'update user_refresh_token set revoked_at=now() where refresh_token_id=$1',
-      [row.refresh_token_id],
-    );
-    return this.issueTokens(row.user_id, row.roles);
+    const client = await this.db.connect();
+    try {
+      await client.query('begin');
+      const result = await client.query(
+        `select rt.refresh_token_id,rt.user_id,
+                coalesce((select array_agg(ur.role_code) from user_role ur
+                          where ur.user_id=u.user_id),'{}') roles
+         from user_refresh_token rt
+         join app_user u on u.user_id=rt.user_id and u.status_code='ACTIVE' and u.deleted_at is null
+         where rt.token_hash=$1 and rt.revoked_at is null and rt.expires_at > now()
+         for update of rt`,
+        [tokenHash],
+      );
+      const row = result.rows[0];
+      if (!row) throw new UnauthorizedException('유효하지 않은 refresh token입니다.');
+      await client.query(
+        'update user_refresh_token set revoked_at=now() where refresh_token_id=$1',
+        [row.refresh_token_id],
+      );
+      const tokens = await this.issueTokens(row.user_id, row.roles, client);
+      await client.query('commit');
+      return tokens;
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async logout(refreshToken: string) {
@@ -326,6 +420,7 @@ export class AuthService {
          join user_password p on p.user_id=u.user_id
          where vt.token_hash=$1 and vt.purpose_code='EMAIL_VERIFY'
            and vt.used_at is null and vt.expires_at>now()
+           and u.status_code in ('ACTIVE','PENDING_VERIFICATION')
          for update of vt,u`,
         [hashToken(token)],
       );
@@ -436,6 +531,9 @@ export class AuthService {
   }
 
   async deleteAccount(userId: string, dto: DeleteAccountDto) {
+    if (dto.naverRefreshToken && (dto.kakaoIdToken || dto.kakaoAccessToken || dto.kakaoNonce)) {
+      throw new BadRequestException('하나의 소셜 계정으로 인증해 주세요.');
+    }
     let kakaoIdentity: KakaoIdentity | null = null;
     if (dto.kakaoIdToken && dto.kakaoNonce) {
       kakaoIdentity = await this.kakao.verify(dto.kakaoIdToken, dto.kakaoNonce);
@@ -443,6 +541,11 @@ export class AuthService {
         throw new UnauthorizedException('카카오 계정으로 다시 인증해 주세요.');
       }
     }
+    const naverIdentity: NaverIdentity | null = dto.naverRefreshToken
+      ? await this.naver.verify(dto.naverRefreshToken)
+      : null;
+    let naverUnlinkToken: string | null = null;
+    let deleted: Record<string, number>;
     const client = await this.db.connect();
     try {
       await client.query('begin');
@@ -461,9 +564,17 @@ export class AuthService {
         if (!dto.password || !(await argon2.verify(row.password_hash, dto.password))) {
           throw new UnauthorizedException('현재 비밀번호를 확인하세요.');
         }
+      } else if (naverIdentity) {
+        const social = await client.query(
+          `select 1 from user_social_account
+           where user_id=$1 and provider_code='NAVER' and provider_subject=$2`,
+          [userId, naverIdentity.subject],
+        );
+        if (!social.rowCount) throw new UnauthorizedException('네이버 계정이 일치하지 않습니다.');
+        naverUnlinkToken = naverIdentity.accessToken;
       } else {
         if (!row.has_social || !kakaoIdentity || !dto.kakaoAccessToken || !dto.kakaoNonce) {
-          throw new UnauthorizedException('카카오 계정으로 다시 인증해 주세요.');
+          throw new UnauthorizedException('로그인한 소셜 계정으로 다시 인증해 주세요.');
         }
         const social = await client.query(
           `select 1 from user_social_account
@@ -510,13 +621,26 @@ export class AuthService {
       );
       await client.query('delete from app_user where user_id=$1', [userId]);
       await client.query('commit');
-      return { ok: true, deleted: counts };
+      deleted = counts;
     } catch (error) {
       await client.query('rollback');
       throw error;
     } finally {
       client.release();
     }
+    if (naverUnlinkToken) {
+      // A provider call cannot be atomic with a DB transaction. Never unlink
+      // before the deletion commits: failed DB deletion must leave login intact.
+      try {
+        await this.naver.unlink(naverUnlinkToken);
+      } catch {
+        // The account is already gone. Do not report deletion failure or persist
+        // provider tokens; tell the user precisely that connection cleanup remains.
+        this.logger.warn('Naver account deleted; provider connection cleanup pending.');
+        return { ok: true, deleted, providerDisconnectPending: true };
+      }
+    }
+    return { ok: true, deleted };
   }
 
   async me(userId: string) {
@@ -524,7 +648,8 @@ export class AuthService {
       `select u.user_id,u.email,u.status_code,u.email_verified_at,u.last_login_at,u.created_at,
               exists(select 1 from user_password pw where pw.user_id=u.user_id) has_password,
               (select sa.provider_email from user_social_account sa
-               where sa.user_id=u.user_id and sa.provider_code='KAKAO') social_email,
+               where sa.user_id=u.user_id and sa.provider_email is not null
+               order by sa.provider_code limit 1) social_email,
               coalesce((select array_agg(sa.provider_code order by sa.provider_code)
                         from user_social_account sa where sa.user_id=u.user_id),'{}') social_providers,
               (select count(*)::int from screen_preset p where p.user_id=u.user_id) preset_count,
@@ -536,7 +661,7 @@ export class AuthService {
     return result.rows[0];
   }
 
-  private async issueTokens(userId: string, roles: string[]) {
+  private async issueTokens(userId: string, roles: string[], client: Pool | PoolClient = this.db) {
     const accessMinutes = Number(this.config.get('JWT_ACCESS_MINUTES') ?? 15);
     const accessToken = await this.jwt.signAsync(
       { sub: userId, roles },
@@ -544,7 +669,7 @@ export class AuthService {
     );
     const refreshToken = newOpaqueToken();
     const days = Number(this.config.get('REFRESH_TOKEN_DAYS') ?? 30);
-    await this.db.query(
+    await client.query(
       `insert into user_refresh_token(user_id,token_hash,expires_at)
        values ($1,$2,now()+($3::text || ' days')::interval)`,
       [userId, hashToken(refreshToken), days],

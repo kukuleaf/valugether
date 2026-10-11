@@ -7,12 +7,14 @@ import { AdminGuard } from './admin.guard';
 import { OptionalAccessTokenGuard } from './optional-access-token.guard';
 import { MailService } from '../common/mail/mail.service';
 import { KakaoOidcService } from './kakao-oidc.service';
+import { NaverOAuthService } from './naver-oauth.service';
 @Module({
   imports: [JwtModule.register({})],
   controllers: [AuthController],
   providers: [
     AuthService,
     KakaoOidcService,
+    NaverOAuthService,
     AccessTokenGuard,
     OptionalAccessTokenGuard,
     AdminGuard,

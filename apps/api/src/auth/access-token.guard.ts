@@ -35,11 +35,13 @@ export class AccessTokenGuard implements CanActivate {
       throw new UnauthorizedException();
     }
     const active = await this.db.query(
-      `select 1 from app_user
+      `select coalesce((select array_agg(r.role_code) from user_role r
+                        where r.user_id=app_user.user_id),'{}') roles from app_user
        where user_id=$1 and status_code='ACTIVE' and deleted_at is null`,
       [user.sub],
     );
     if (!active.rowCount) throw new UnauthorizedException();
+    user.roles = active.rows[0].roles;
     req.user = user;
     return true;
   }

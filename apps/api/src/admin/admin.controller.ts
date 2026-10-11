@@ -77,6 +77,8 @@ class UpdateStrategyDto {
   @IsString() @MaxLength(2000) description!: string;
   @IsBoolean() isActive!: boolean;
   @IsInt() @Min(0) @Max(1000) displayOrder!: number;
+  @IsOptional() @IsString() @MaxLength(80) sortMetricCode?: string | null;
+  @IsOptional() @IsIn(['ASC', 'DESC']) sortDirection?: 'ASC' | 'DESC';
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(40)

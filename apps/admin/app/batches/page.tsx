@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Shell } from '../../components/Shell';
 import { JsonTable } from '../../components/JsonTable';
+import { adminRequest, errorMessage } from '../../lib/api-client';
+import { ResourceFeedback } from '../../components/ResourceFeedback';
 
 type QualityIssue = {
   data_quality_issue_id: number;
@@ -32,22 +34,24 @@ export default function Batches() {
   const [quality, setQuality] = useState<QualityStatus>({ latest: null, issues: [], recent: [] });
   const [message, setMessage] = useState('');
   const [running, setRunning] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [runsResponse, qualityResponse] = await Promise.all([
-      fetch('/api/admin/batch-runs?limit=100'),
-      fetch('/api/admin/batches/data-quality?limit=10'),
-    ]);
-    const [runsBody, qualityBody] = await Promise.all([
-      runsResponse.json(),
-      qualityResponse.json(),
-    ]);
-    if (!runsResponse.ok || !qualityResponse.ok) {
-      setMessage(runsBody.message ?? qualityBody.message ?? '배치 상태를 불러오지 못했습니다.');
-      return;
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [runsBody, qualityBody] = await Promise.all([
+        adminRequest<any[]>('/api/admin/batch-runs?limit=100'),
+        adminRequest<QualityStatus>('/api/admin/batches/data-quality?limit=10'),
+      ]);
+      setRows(runsBody);
+      setQuality(qualityBody);
+    } catch (error) {
+      setLoadError(errorMessage(error));
+    } finally {
+      setLoading(false);
     }
-    setRows(runsBody);
-    setQuality(qualityBody);
   }, []);
 
   useEffect(() => {
@@ -59,16 +63,17 @@ export default function Batches() {
     setRunning(true);
     setMessage('');
     try {
-      const response = await fetch('/api/admin/batches/data-quality', { method: 'POST' });
-      const body = await response.json();
-      if (!response.ok) {
-        setMessage(messageOf(body, '품질 검사에 실패했습니다.'));
-        return;
-      }
+      const body = await adminRequest<{
+        status: string;
+        warningCount: number;
+        criticalCount: number;
+      }>('/api/admin/batches/data-quality', { method: 'POST' });
       setMessage(
         `검사 완료: ${body.status}, 경고 ${body.warningCount}건, 심각 ${body.criticalCount}건`,
       );
       await load();
+    } catch (error) {
+      setMessage(errorMessage(error));
     } finally {
       setRunning(false);
     }
@@ -85,7 +90,12 @@ export default function Batches() {
           {running ? '검사 중…' : '지금 품질 검사'}
         </button>
       </div>
-      {message && <p className="feedback">{message}</p>}
+      {message && (
+        <p className="feedback" role="status">
+          {message}
+        </p>
+      )}
+      <ResourceFeedback error={loadError} loading={loading} retry={load} />
 
       <div className="grid">
         <div className="card">
@@ -108,34 +118,36 @@ export default function Batches() {
 
       <h2>최근 품질 이슈</h2>
       {quality.issues.length ? (
-        <table>
-          <thead>
-            <tr>
-              <th>등급</th>
-              <th>검사</th>
-              <th>시장</th>
-              <th>실제/기준</th>
-              <th>내용</th>
-            </tr>
-          </thead>
-          <tbody>
-            {quality.issues.map((issue) => (
-              <tr key={issue.data_quality_issue_id}>
-                <td>
-                  <span className={`status quality-${issue.severity_code.toLowerCase()}`}>
-                    {issue.severity_code === 'CRITICAL' ? '심각' : '경고'}
-                  </span>
-                </td>
-                <td>{issue.check_code}</td>
-                <td>{issue.market_code ?? '-'}</td>
-                <td>
-                  {issue.actual_value ?? '-'} / {issue.threshold_value ?? '-'}
-                </td>
-                <td>{issue.message}</td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>등급</th>
+                <th>검사</th>
+                <th>시장</th>
+                <th>실제/기준</th>
+                <th>내용</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {quality.issues.map((issue) => (
+                <tr key={issue.data_quality_issue_id}>
+                  <td>
+                    <span className={`status quality-${issue.severity_code.toLowerCase()}`}>
+                      {issue.severity_code === 'CRITICAL' ? '심각' : '경고'}
+                    </span>
+                  </td>
+                  <td>{issue.check_code}</td>
+                  <td>{issue.market_code ?? '-'}</td>
+                  <td>
+                    {issue.actual_value ?? '-'} / {issue.threshold_value ?? '-'}
+                  </td>
+                  <td>{issue.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className="muted">기록된 품질 이슈가 없습니다.</p>
       )}
@@ -144,9 +156,4 @@ export default function Batches() {
       <JsonTable rows={rows} />
     </Shell>
   );
-}
-
-function messageOf(body: any, fallback: string) {
-  const message = body?.message ?? fallback;
-  return Array.isArray(message) ? message.join(', ') : String(message);
 }

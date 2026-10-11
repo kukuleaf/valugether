@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,6 +15,8 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -24,6 +27,7 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Pool } from 'pg';
@@ -33,21 +37,23 @@ import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AuditService } from '../audit/audit.service';
 
 class PresetConditionDto {
-  @IsString() metricCode!: string;
-  @IsString() operator!: string;
+  @IsString() @MinLength(1) @MaxLength(80) metricCode!: string;
+  @IsIn(['LTE', 'LT', 'GTE', 'GT', 'EQ', 'BETWEEN']) operator!: string;
   @IsNumber() target!: number;
   @IsOptional() @IsNumber() target2?: number;
-  @IsOptional() @IsNumber() weight?: number;
+  @IsOptional() @IsNumber() @Min(0.01) @Max(100) weight?: number;
 }
 class SavePresetDto {
-  @IsString() @MaxLength(120) name!: string;
-  @IsOptional() @IsString() description?: string;
+  @IsString() @MinLength(1) @MaxLength(120) name!: string;
+  @IsOptional() @IsString() @MaxLength(2000) description?: string;
   @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(40)
   @ValidateNested({ each: true })
   @Type(() => PresetConditionDto)
   conditions!: PresetConditionDto[];
-  @IsOptional() @IsArray() markets?: string[];
-  @IsOptional() @IsArray() exchanges?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) markets?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) exchanges?: string[];
   @IsOptional() @IsIn(['GENERAL', 'ADVANCED_BASIC', 'ADVANCED_DETAIL']) mode?: string;
 }
 class NotificationSettingsDto {
@@ -160,12 +166,21 @@ export class PresetsController {
   }
 
   private async persistPreset(userId: string, dto: SavePresetDto, presetId?: number) {
+    if (!dto.name.trim()) throw new BadRequestException('기준 이름을 입력하세요.');
+    for (const condition of dto.conditions) {
+      if (
+        condition.operator === 'BETWEEN' &&
+        (condition.target2 == null || condition.target > condition.target2)
+      ) {
+        throw new BadRequestException('범위 조건의 최솟값과 최댓값을 확인하세요.');
+      }
+    }
     const client = await this.db.connect();
     try {
       await client.query('begin');
       const values = [
         userId,
-        dto.name,
+        dto.name.trim(),
         dto.description ?? null,
         JSON.stringify(dto.markets ?? []),
         JSON.stringify(dto.exchanges ?? []),
@@ -205,7 +220,7 @@ export class PresetsController {
           'select metric_id from financial_metric where metric_code=$1 and is_active=true',
           [c.metricCode],
         );
-        if (!m.rowCount) throw new Error(`unknown metric ${c.metricCode}`);
+        if (!m.rowCount) throw new BadRequestException('사용할 수 없는 지표가 포함되어 있습니다.');
         await client.query(
           `insert into screen_preset_condition(
              preset_id, metric_id, operator_code, target_value,

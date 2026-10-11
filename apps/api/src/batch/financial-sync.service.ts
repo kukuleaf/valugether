@@ -338,9 +338,12 @@ export class FinancialSyncService {
     const values: Record<string, number | undefined> = {
       CLOSE_PRICE: price,
       FREE_CASH_FLOW: cfo == null || capex == null ? undefined : cfo - Math.abs(capex),
-      BPS: equity == null || !shares ? undefined : equity / shares,
+      BPS:
+        equity == null || equity <= 0 || shares == null || shares <= 0
+          ? undefined
+          : equity / shares,
       MARKET_CAP: price == null || shares == null ? undefined : price * shares,
-      PER: price == null || !eps ? undefined : price / eps,
+      PER: price == null || price <= 0 || eps == null || eps <= 0 ? undefined : price / eps,
       ROE: netIncome == null || !equity ? undefined : (netIncome / equity) * 100,
       ROA: netIncome == null || !assets ? undefined : (netIncome / assets) * 100,
       OPERATING_MARGIN:
@@ -362,10 +365,12 @@ export class FinancialSyncService {
       EPS_GROWTH_YOY: this.growth(byMetric.get('EPS_BASIC')),
     };
     const bps = values.BPS;
-    values.PBR = price == null || !bps ? undefined : price / bps;
+    values.PBR = price == null || price <= 0 || bps == null || bps <= 0 ? undefined : price / bps;
     values.EARNINGS_YIELD = values.PER ? 100 / values.PER : undefined;
     for (const [metricCode, value] of Object.entries(values)) {
-      if (value == null || !Number.isFinite(value)) continue;
+      if (value != null && !Number.isFinite(value)) continue;
+      // Invalid valuation denominators must clear a formerly valid ratio.
+      if (value == null && !['PER', 'PBR', 'BPS', 'EARNINGS_YIELD'].includes(metricCode)) continue;
       await client.query(
         `insert into latest_metric_value(
            security_id,metric_id,numeric_value,as_of_date,source_type,calculation_version
@@ -373,26 +378,39 @@ export class FinancialSyncService {
          select $1,metric_id,$3,$4,'DERIVED','ACTUAL_V1'
          from financial_metric where metric_code=$2
          on conflict(security_id,metric_id) do update set
-           numeric_value=excluded.numeric_value,as_of_date=excluded.as_of_date,
+           numeric_value=excluded.numeric_value,text_value=null,as_of_date=excluded.as_of_date,
            source_type=excluded.source_type,source_ref_id=null,
            calculation_version=excluded.calculation_version,updated_at=now()`,
-        [securityId, metricCode, value, asOfDate],
+        [securityId, metricCode, value ?? null, asOfDate],
       );
     }
     void companyId;
   }
 
   private growth(list?: NormalizedFinancialFact[]) {
-    if (!list || list.length < 2 || !list[1].value) return undefined;
-    return ((list[0].value - list[1].value) / Math.abs(list[1].value)) * 100;
+    if (!list?.length) return undefined;
+    const current = list[0];
+    const currentYear = current.fiscalYear ?? Number(current.endDate.slice(0, 4));
+    const previous = list.find(
+      (fact) =>
+        fact.periodType === current.periodType &&
+        (fact.fiscalYear ?? Number(fact.endDate.slice(0, 4))) === currentYear - 1,
+    );
+    if (!previous?.value) return undefined;
+    return ((current.value - previous.value) / Math.abs(previous.value)) * 100;
   }
 
   private consecutivePositive(list?: NormalizedFinancialFact[]) {
-    if (!list?.length) return undefined;
+    const annual = list?.filter((fact) => fact.periodType === 'FY');
+    if (!annual?.length) return undefined;
     let count = 0;
-    for (const item of list) {
+    let expectedYear = annual[0].fiscalYear ?? Number(annual[0].endDate.slice(0, 4));
+    for (const item of annual) {
+      const year = item.fiscalYear ?? Number(item.endDate.slice(0, 4));
+      if (year !== expectedYear) break;
       if (item.value <= 0) break;
       count++;
+      expectedYear--;
     }
     return count;
   }
